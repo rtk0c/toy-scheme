@@ -1,8 +1,9 @@
 export module yawarakai;
 
 import std;
+import std.compat;
 
-export namespace yawakarai {
+export namespace yawarakai {
 
 // Forward declarations
 struct Sexp;
@@ -46,6 +47,10 @@ struct Sexp {
     } type;
 
     Sexp();
+    Sexp(const Sexp&);
+    Sexp& operator=(const Sexp&);
+    Sexp(Sexp&&);
+    Sexp& operator=(Sexp&&);
     ~Sexp();
 
     void set(std::string v);
@@ -55,7 +60,7 @@ struct Sexp {
     void set_nil();
 };
 
-Sexp parse_sexp(std::string_view src, Memory& heap);
+MemoryLocation parse_sexp(std::string_view src, Memory& heap);
 std::string dump_sexp(MemoryLocation addr, const Memory& heap);
 
 }

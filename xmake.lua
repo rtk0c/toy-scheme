@@ -1,4 +1,4 @@
-set_languages("c++20")
+set_languages("c++23")
 
 target("yawarakai")
     set_kind("binary")

@@ -1,6 +1,7 @@
 module yawarakai;
 
 import std;
+import std.compat;
 
 using namespace std::literals;
 
@@ -21,6 +22,60 @@ Sexp::Sexp()
 {
 }
 
+Sexp::Sexp(const Sexp& that)
+    : type{ that.type }
+{
+    switch (type) {
+        case Int: v_int = that.v_int; break;
+        case Float: v_float = that.v_float; break;
+        case String: new(&v_str) auto(that.v_str); break;
+        case Symbol: new(&v_symbol) auto(that.v_symbol); break;
+        case Cons: new(&v_cons) auto(that.v_cons); break;
+        case Nil: v_nil = {}; break;
+    }
+}
+
+Sexp& Sexp::operator=(const Sexp& that) {
+    set_nil();
+    type = that.type;
+    switch (that.type) {
+        case Int: v_int = that.v_int; break;
+        case Float: v_float = that.v_float; break;
+        case String: new(&v_str) auto(that.v_str); break;
+        case Symbol: new(&v_symbol) auto(that.v_symbol); break;
+        case Cons: new(&v_cons) auto(that.v_cons); break;
+        case Nil: v_nil = {}; break;
+    }
+    return *this;
+}
+
+Sexp::Sexp(Sexp&& that)
+    : type{ that.type }
+{
+    switch (type) {
+        case Int: v_int = that.v_int; break;
+        case Float: v_float = that.v_float; break;
+        case String: new(&v_str) auto(std::move(that.v_str)); break;
+        case Symbol: new(&v_symbol) auto(std::move(that.v_symbol)); break;
+        case Cons: new(&v_cons) auto(std::move(that.v_cons)); break;
+        case Nil: v_nil = {}; break;
+    }
+}
+
+Sexp& Sexp::operator=(Sexp&& that) {
+    set_nil();
+    type = that.type;
+    switch (type) {
+        case Int: v_int = that.v_int; break;
+        case Float: v_float = that.v_float; break;
+        case String: new(&v_str) auto(std::move(that.v_str)); break;
+        case Symbol: new(&v_symbol) auto(std::move(that.v_symbol)); break;
+        case Cons: new(&v_cons) auto(std::move(that.v_cons)); break;
+        case Nil: v_nil = {}; break;
+    }
+    return *this;
+}
+
 Sexp::~Sexp() {
     set_nil();
 }
@@ -28,7 +83,7 @@ Sexp::~Sexp() {
 void Sexp::set(std::string v) {
     set_nil();
     type = String;
-    v_str = std::move(v);
+    new(&v_str) auto(std::move(v));
 }
 
 void Sexp::set(int64_t v) {
@@ -46,7 +101,7 @@ void Sexp::set(double v) {
 void Sexp::set(ConsCell v) {
     set_nil();
     type = String;
-    v_cons = std::move(v);
+    new(&v_cons) auto(std::move(v));
 }
 
 void Sexp::set_nil() {
@@ -57,7 +112,11 @@ void Sexp::set_nil() {
             break;
 
         case String:
-            v_str.~std::string();
+            v_str.~basic_string();
+            break;
+
+        case Symbol:
+            v_symbol.~basic_string();
             break;
 
         case Cons:
@@ -71,18 +130,18 @@ void Sexp::set_nil() {
     v_nil = {};
 }
 
-Sexp parse_sexp(std::string_view src, Memory& heap) {
+MemoryLocation parse_sexp(std::string_view src, Memory& heap) {
     struct ParserStackFrame {
         MemoryLocation the_list;
+    };
 
-        void push_child_sexp(MemoryLocation sexp) {
-            Sexp new_head;
-            new_head.set(ConsCell{ .car = sexp, .cdr = the_list });
+    auto push_child_sexp = [&](ParserStackFrame& psf, MemoryLocation sexp) {
+        Sexp new_head;
+        new_head.set(ConsCell{ .car = sexp, .cdr = psf.the_list });
 
-            MemoryLocation new_head_addr = heap.push(std::move(new_head));
+        MemoryLocation new_head_addr = heap.push(std::move(new_head));
 
-            the_list = new_head_addr;
-        }
+        psf.the_list = new_head_addr;
     };
 
     // Parser Call Stack
@@ -121,9 +180,9 @@ Sexp parse_sexp(std::string_view src, Memory& heap) {
                 throw "Error: unbalanced parenthesis";
             }
 
-            const auto& curr = pcs.rbegin()[0];
-            const auto& parent = pcs.rbegin()[1];
-            parent.push_child_sexp(curr.the_list);
+            auto& curr = pcs.rbegin()[0];
+            auto& parent = pcs.rbegin()[1];
+            push_child_sexp(parent, curr.the_list);
             pcs.pop_back();
 
             cursor += 1;
@@ -138,12 +197,12 @@ Sexp parse_sexp(std::string_view src, Memory& heap) {
             while (true) {
                 // Break conditions
                 if (cursor >= src.length())
-                    ERR_EOF();
+                    throw "Error: unexpected end of file while parsing string";
                 if (src[cursor] != '"')
                     break;
 
                 if (src[cursor] == '\\') {
-                    str_size += 1
+                    str_size += 1;
                     cursor += 2;
                     continue;
                 }
@@ -182,23 +241,23 @@ Sexp parse_sexp(std::string_view src, Memory& heap) {
 
             MemoryLocation addr = heap.push(std::move(sexp));
 
-            const auto& parent = pcs.back();
-            pcs.push_child_sexp(addr);
+            auto& parent = pcs.back();
+            push_child_sexp(parent, addr);
 
             continue;
         }
 
         auto try_parse_number = [&]<typename T>() -> bool {
             T v;
-            auto [rest, ec] = std::from_chars(&src[cursor], src.end(), v);
+            auto [rest, ec] = std::from_chars(&src[cursor], &*src.end(), v);
             if (ec == std::errc()) {
                 Sexp sexp;
                 sexp.set(v);
 
                 MemoryLocation addr = heap.push(std::move(sexp));
 
-                const auto& parent = pcs.back();
-                pcs.push_child_sexp(addr);
+                auto& parent = pcs.back();
+                push_child_sexp(parent, addr);
 
                 cursor += rest - &src[cursor];
                 return true;
@@ -209,9 +268,9 @@ Sexp parse_sexp(std::string_view src, Memory& heap) {
             }
 
             return false;
-        }
-        if (try_parse_number<int64_t>()) continue;
-        if (try_parse_number<double>()) continue;
+        };
+        if (try_parse_number.template operator()<int64_t>()) continue;
+        if (try_parse_number.template operator()<double>()) continue;
 
         {
             size_t symbol_size = 0;
@@ -219,7 +278,7 @@ Sexp parse_sexp(std::string_view src, Memory& heap) {
 
             while (true) {
                 if (cursor >= src.length())
-                    ERR_EOF();
+                    break;
                 if (src[cursor] != ' ')
                     break;
 
@@ -235,13 +294,16 @@ Sexp parse_sexp(std::string_view src, Memory& heap) {
 
             MemoryLocation addr = heap.push(std::move(sexp));
 
-            const auto& parent = pcs.back();
-            parent.push_child_sexp(addr);)
+            auto& parent = pcs.back();
+            push_child_sexp(parent, addr);
         }
     }
+
+    return pcs[0].the_list;
 }
 
 std::string dump_sexp(MemoryLocation addr, const Memory& heap) {
+    return ""s;
 }
 
 }
