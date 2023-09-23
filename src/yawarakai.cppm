@@ -1,4 +1,4 @@
 export module yawarakai;
 
-export import :sexp;
+export import :lisp;
 export import :util;

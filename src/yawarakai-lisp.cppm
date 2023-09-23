@@ -1,9 +1,8 @@
-export module yawarakai:sexp;
+export module yawarakai:lisp;
 
 import std;
-import std.compat;
 
-#include "util.hpp"
+#include "yawarakai/util.hpp"
 
 export namespace yawarakai {
 

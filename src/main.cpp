@@ -1,5 +1,4 @@
 import std;
-import std.compat;
 import yawarakai;
 
 namespace fs = std::filesystem;

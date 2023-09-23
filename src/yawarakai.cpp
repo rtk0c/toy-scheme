@@ -1,7 +1,7 @@
+// TODO this file should be of module `yawarakai:lisp`, but if we do that, nothing from the :lisp interface unit is available here -- xmake bug?
 module yawarakai;
 
 import std;
-import std.compat;
 
 using namespace std::literals;
 
