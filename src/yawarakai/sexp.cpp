@@ -45,15 +45,13 @@ static bool is_char_in_symbol(char c) {
     return !(std::isspace(c) || c == '(' || c == ')');
 }
 
-Sexp parse_sexp(std::string_view src, Heap& heap) {
+std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
     struct ParserStackFrame {
-        Sexp the_list;
+        std::vector<Sexp> children;
     };
+    std::vector<ParserStackFrame> cs;
 
-    // Parser Call Stack
-    std::vector<ParserStackFrame> pcs;
-
-    pcs.push_back(ParserStackFrame());
+    cs.push_back(ParserStackFrame());
 
     size_t cursor = 0;
 
@@ -67,30 +65,37 @@ Sexp parse_sexp(std::string_view src, Heap& heap) {
 
         // TODO
         // if (src[cursor] == '\'') {
-        //     pcs.push_back(ParserStackFrame());
-        //     const auto& quoter = pcs.rbegin()[0];
-        //     const auto& parent = pcs.rbegin()[1]
+        //     cs.push_back(ParserStackFrame());
+        //     const auto& quoter = cs.rbegin()[0];
+        //     const auto& parent = cs.rbegin()[1]
         //     parent.;
         //     cursor += 1;
         //     continue;
         // }
 
         if (src[cursor] == '(') {
-            pcs.push_back(ParserStackFrame());
+            cs.push_back(ParserStackFrame());
 
             cursor += 1;
             continue;
         }
 
         if (src[cursor] == ')') {
-            if (pcs.size() == 1) {
+            if (cs.size() == 1) {
                 throw "Error: unbalanced parenthesis";
             }
 
-            auto& curr = pcs.rbegin()[0];
-            auto& parent = pcs.rbegin()[1];
-            cons_inplace(curr.the_list, parent.the_list, heap);
-            pcs.pop_back();
+            auto& curr = cs.rbegin()[0];
+            auto& parent = cs.rbegin()[1];
+
+            Sexp list;
+            list.set_nil();
+            for (auto it = curr.children.rbegin(); it != curr.children.rend(); ++it) {
+                cons_inplace(std::move(*it), list, heap);
+            }
+
+            cs.pop_back(); // Removes `curr`
+            parent.children.push_back(std::move(list));
 
             cursor += 1;
             continue;
@@ -146,8 +151,7 @@ Sexp parse_sexp(std::string_view src, Heap& heap) {
             Sexp sexp;
             sexp.set(std::move(str));
 
-            auto& parent = pcs.back();
-            cons_inplace(std::move(sexp), parent.the_list, heap);
+            cs.back().children.push_back(std::move(sexp));
 
             continue;
         }
@@ -159,8 +163,7 @@ Sexp parse_sexp(std::string_view src, Heap& heap) {
                 Sexp sexp;
                 sexp.set(v);
 
-                auto& parent = pcs.back();
-                cons_inplace(std::move(sexp), parent.the_list, heap);
+                cs.back().children.push_back(std::move(sexp));
 
                 cursor += rest - &src[cursor];
                 continue;
@@ -184,78 +187,73 @@ Sexp parse_sexp(std::string_view src, Heap& heap) {
                 symbol_size += 1;
                 cursor += 1;
             }
-            cursor += 1;
+
+            char next_c = src[cursor];
+            if (std::isspace(next_c))
+                cursor += 1;
 
             Sexp sexp;
             sexp.set(Symbol(std::string(&src[symbol_begin], symbol_size)));
 
-            auto& parent = pcs.back();
-            cons_inplace(std::move(sexp), parent.the_list, heap);
+            cs.back().children.push_back(std::move(sexp));
         }
     }
 
-    return pcs[0].the_list;
+    // NB: this is not against NRVO: our return value is heap allocated anyways (in a std::vector), so we must use std::move
+    return std::move(cs[0].children);
+}
+
+void dump_sexp_impl(std::string& output, const Sexp& sexp, const Heap& heap) {
+    switch (sexp.get_type()) {
+        using enum Sexp::Type;
+
+        case TYPE_NIL: {
+            output += "()";
+        } break;
+
+        case TYPE_NUM: {
+            auto v = sexp.as<double>();
+
+            constexpr auto BUF_SIZE = std::numeric_limits<double>::max_digits10;
+            char buf[BUF_SIZE];
+            auto res = std::to_chars(buf, buf + BUF_SIZE, v);
+            
+            if (res.ec == std::errc()) {
+                output += std::string_view(buf, res.ptr);
+            } else {
+                throw "Error formatting number.";
+            }
+        } break;
+
+        case TYPE_STRING: {
+            auto& v = sexp.as<std::string>();
+
+            output += '"';
+            output += v;
+            output += '"';
+        } break;
+
+        case TYPE_SYMBOL: {
+            auto& v = sexp.as<Symbol>();
+
+            output += v.name;
+        } break;
+
+        case TYPE_REF: {
+            output += "(";
+            traverse_list(sexp, heap, [&](const Sexp& elm) {
+                dump_sexp_impl(output, elm, heap);
+                output += " ";
+            });
+            output.pop_back(); // Remove the trailing space
+            output += ")";
+        } break;
+    }
 }
 
 std::string dump_sexp(const Sexp& sexp, const Heap& heap) {
     std::string result;
-
-    struct PrinterStackFrame {
-        const Sexp* sexp;
-    };
-
-    std::vector<PrinterStackFrame> cs;
-    cs.push_back(PrinterStackFrame{
-        .sexp = &sexp,
-    });
-
-    while (!cs.empty()) {
-        auto& psf = cs.back();
-        ScopeGuard _ = [&]() { cs.pop_back(); };
-
-        switch (psf.sexp->get_type()) {
-            using enum Sexp::Type;
-
-            case TYPE_NIL: {
-                result += "()";
-            } break;
-
-            case TYPE_NUM: {
-                auto v = psf.sexp->as<double>();
-
-                constexpr auto BUF_SIZE = std::numeric_limits<double>::max_digits10;
-                char buf[BUF_SIZE];
-                auto res = std::to_chars(buf, buf + BUF_SIZE, v);
-                
-                if (res.ec == std::errc()) {
-                    result += std::string_view(buf, res.ptr);
-                } else {
-                    throw "Error formatting number.";
-                }
-            } break;
-
-            case TYPE_STRING: {
-                auto& v = psf.sexp->as<std::string>();
-
-                result += '"';
-                result += v;
-                result += '"';
-            } break;
-
-            case TYPE_SYMBOL: {
-                auto& v = psf.sexp->as<Symbol>();
-
-                result += v.name;
-            }
-
-            case TYPE_REF: {
-                traverse_list(*psf.sexp, heap, [&](auto&& elm) {
-                    cs.push_back(PrinterStackFrame{ .sexp = &elm });
-                });
-            } break;
-        }
-    }
-
+    dump_sexp_impl(result, sexp, heap);
     return result;
 }
 

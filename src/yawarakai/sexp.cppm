@@ -69,14 +69,14 @@ template <typename THeap, typename TFunction>
 void traverse_list(const Sexp& list, THeap&& heap, TFunction&& callback) {
     const Sexp* curr = &list;
     while (curr->get_type() == Sexp::TYPE_REF) {
-        auto ref = std::get<MemoryLocation>(list._value);
+        auto ref = curr->as<MemoryLocation>();
         auto& cons_cell = heap.lookup(ref);
         callback(cons_cell.car);
         curr = &cons_cell.cdr;
     }
 }
 
-Sexp parse_sexp(std::string_view src, Heap& heap);
+std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap);
 std::string dump_sexp(const Sexp& sexp, const Heap& heap);
 
 }
