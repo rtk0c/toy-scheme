@@ -28,3 +28,20 @@ word
   (+ a b))
 
 (define my-list (foo bar "a string" 42 3.14159 () "more string"))
+
+;; => (quote (1 2 3 list))
+;; The parser should only expand ' to (quote)
+'(1 2 3 list)
+
+;; => (quote 1)
+;; Atoms should also be able to be quoted
+'1
+
+;; => (unquote function)
+,function
+
+;; => (quasiquote my-symbol)
+`my-symbol
+
+;; => (quasiquote (+ 1 (unquote my-var)))
+`(+ 1 ,my-var)

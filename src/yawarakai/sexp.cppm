@@ -3,32 +3,23 @@ export module yawarakai:sexp;
 import std;
 import std.compat;
 
+#include "util.hpp"
+
 export namespace yawarakai {
 
 /******** Forward declarations ********/
-
-/// Handles both atoms and lists (as references to heap allocated ConsCell's)
 struct Sexp;
-/// A heap allocated cons, with a car/left and cdr/right Sexp
 struct ConsCell;
+struct Heap;
 
 using MemoryLocation = size_t;
-
-struct Heap {
-    std::vector<ConsCell> storage;
-
-    Heap();
-
-    MemoryLocation push(ConsCell cons);
-    const ConsCell& lookup(MemoryLocation addr) const;
-    ConsCell& lookup(MemoryLocation addr);
-};
 
 struct Nil {};
 struct Symbol {
     std::string name;
 };
 
+/// Handles both atoms and lists (as references to heap allocated ConsCell's)
 struct Sexp {
     // NOTE: keep types in std::variant and their corresponding TYPE_XXX indices in sync
     using Storage = std::variant<Nil, double, std::string, Symbol, MemoryLocation>;
@@ -46,22 +37,56 @@ struct Sexp {
     template <typename T>
     const T& as() const { return std::get<T>(_value); }
 
-    void set_nil() { _value.emplace<Nil>(); }
+    void set_nil() { _value = Nil(); }
     void set(Nil) { set_nil(); }
     void set(double v) { _value = v; }
     void set(std::string v) { _value = std::move(v); }
+    void set_symbol(std::string name) { _value = Symbol(std::move(name)); }
     void set(Symbol v) { _value = std::move(v); }
     void set(MemoryLocation v) { _value = std::move(v); }
 };
 
+Sexp operator ""_sym(const char* str, size_t len) {
+    Sexp sexp;
+    sexp.set_symbol(std::string(str, len));
+    return sexp;
+}
+
+/// A heap allocated cons, with a car/left and cdr/right Sexp
 struct ConsCell {
     Sexp car;
     Sexp cdr;
 };
 
+struct Heap {
+    std::vector<ConsCell> storage;
+
+    // A collection of canonical symbols
+    struct {
+        Sexp define = "define"_sym;
+        Sexp quote = "quote"_sym;
+        Sexp unquote = "unquote"_sym;
+        Sexp quasiquote = "quasiquote"_sym;
+    } sym;
+
+    Heap();
+
+    MemoryLocation push(ConsCell cons);
+    const ConsCell& lookup(MemoryLocation addr) const;
+    ConsCell& lookup(MemoryLocation addr);
+};
+
 /// Constructs a ConsCell on heap, with car = a and cdr = b, and return a reference Sexp to it.
 Sexp cons(Sexp a, Sexp b, Heap& heap);
 void cons_inplace(Sexp a, Sexp& list, Heap& heap);
+
+// NB: we use varadic template for perfect forwarding, std::initializer_list forces us to make copies
+template <typename... Ts>
+Sexp make_list_v(Heap& heap, Ts&&... sexps) {
+    Sexp the_list;
+    FOLD_ITER_BACKWARDS(cons_inplace(std::forward<Ts>(sexps), the_list, heap));
+    return the_list;
+}
 
 bool is_list(const ConsCell& cons);
 

@@ -44,12 +44,25 @@ bool is_list(const ConsCell& cons) {
 std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
     struct ParserStackFrame {
         std::vector<Sexp> children;
+        const Sexp* wrapper = nullptr;
     };
     std::vector<ParserStackFrame> cs;
 
     cs.push_back(ParserStackFrame());
 
     size_t cursor = 0;
+    const Sexp* next_sexp_wrapper = nullptr;
+
+    auto push_sexp_to_parent = [&](Sexp sexp) {
+        auto& target = cs.back().children;
+        if (next_sexp_wrapper) {
+            // Turns (my-sexp la la la) into (<the wrapper> (my-sexp la la la))
+            target.push_back(make_list_v(heap, *next_sexp_wrapper, std::move(sexp)));
+            next_sexp_wrapper = nullptr;
+        } else {
+            target.push_back(std::move(sexp));
+        }
+    };
 
     while (cursor < src.length()) {
         if (std::isspace(src[cursor])) {
@@ -64,18 +77,20 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
             continue;
         }
 
-        // TODO
-        // if (src[cursor] == '\'') {
-        //     cs.push_back(ParserStackFrame());
-        //     const auto& quoter = cs.rbegin()[0];
-        //     const auto& parent = cs.rbegin()[1]
-        //     parent.;
-        //     cursor += 1;
-        //     continue;
-        // }
+#define CHECK_FOR_WRAP(literal, sym) if (src[cursor] == literal) { next_sexp_wrapper = &sym; cursor++; continue; }
+        CHECK_FOR_WRAP('\'', heap.sym.quote);
+        CHECK_FOR_WRAP(',', heap.sym.unquote);
+        CHECK_FOR_WRAP('`', heap.sym.quasiquote);
+#undef CHECK_FOR_WRAP
 
         if (src[cursor] == '(') {
-            cs.push_back(ParserStackFrame());
+            ParserStackFrame psf;;
+            if (next_sexp_wrapper) {
+                psf.wrapper = next_sexp_wrapper;
+                next_sexp_wrapper = nullptr;
+            }
+
+            cs.push_back(std::move(psf));
 
             cursor += 1;
             continue;
@@ -86,17 +101,17 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
                 throw "Error: unbalanced parenthesis";
             }
 
-            auto& curr = cs.rbegin()[0];
-            auto& parent = cs.rbegin()[1];
-
+            ParserStackFrame& curr = cs.back();
             Sexp list;
-            list.set_nil();
             for (auto it = curr.children.rbegin(); it != curr.children.rend(); ++it) {
                 cons_inplace(std::move(*it), list, heap);
             }
-
+            if (curr.wrapper)
+                list = make_list_v(heap, *curr.wrapper, std::move(list));
             cs.pop_back(); // Removes `curr`
-            parent.children.push_back(std::move(list));
+
+            auto& parent = cs.back();
+            parent.children.push_back(std::move(list));            
 
             cursor += 1;
             continue;
@@ -152,7 +167,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
             Sexp sexp;
             sexp.set(std::move(str));
 
-            cs.back().children.push_back(std::move(sexp));
+            push_sexp_to_parent(std::move(sexp));
 
             continue;
         }
@@ -164,7 +179,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
                 Sexp sexp;
                 sexp.set(v);
 
-                cs.back().children.push_back(std::move(sexp));
+                push_sexp_to_parent(std::move(sexp));
 
                 cursor += rest - &src[cursor];
                 continue;
@@ -197,7 +212,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
             Sexp sexp;
             sexp.set(Symbol(std::string(&src[symbol_begin], symbol_size)));
 
-            cs.back().children.push_back(std::move(sexp));
+            push_sexp_to_parent(std::move(sexp));
         }
     }
 
