@@ -1,3 +1,6 @@
+;;;; This file is a test for the S-expression parser and dumper, not to be evaluated
+;;;; Therefore it's named merely .txt, not .scm
+
 1
 
 2
@@ -7,6 +10,9 @@
 "test"
 
 word
+
+;; nil
+()
 
 (1 2 3)
 

@@ -41,10 +41,6 @@ bool is_list(const ConsCell& cons) {
     return type == Sexp::TYPE_NIL || type == Sexp::TYPE_REF;
 }
 
-static bool is_char_in_symbol(char c) {
-    return !(std::isspace(c) || c == '(' || c == ')');
-}
-
 std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
     struct ParserStackFrame {
         std::vector<Sexp> children;
@@ -56,10 +52,15 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
     size_t cursor = 0;
 
     while (cursor < src.length()) {
-        if (auto c = src[cursor];
-            c == ' ' || c == '\t' || c == '\n')
-        {
+        if (std::isspace(src[cursor])) {
             cursor += 1;
+            continue;
+        }
+
+        // Eat comments
+        if (src[cursor] == ';') {
+            while (cursor < src.length() && src[cursor] != '\n')
+                cursor += 1;
             continue;
         }
 
@@ -181,7 +182,8 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
             while (true) {
                 if (cursor >= src.length())
                     break;
-                if (!is_char_in_symbol(src[cursor]))
+                char c = src[cursor];
+                if (std::isspace(c) || c == '(' || c == ')')
                     break;
 
                 symbol_size += 1;
