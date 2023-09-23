@@ -15,6 +15,10 @@ MemoryLocation Heap::push(ConsCell cons) {
     return storage.size() - 1;
 }
 
+const ConsCell& Heap::lookup(MemoryLocation addr) const {
+    return storage[addr];
+}
+
 ConsCell& Heap::lookup(MemoryLocation addr) {
     return storage[addr];
 }
@@ -30,6 +34,11 @@ void cons_inplace(Sexp a, Sexp& list, Heap& heap) {
     auto addr = heap.push(ConsCell{ std::move(a), std::move(list) });
     list = Sexp();
     list.set(addr);
+}
+
+bool is_list(const ConsCell& cons) {
+    auto type = cons.cdr.get_type();
+    return type == Sexp::TYPE_NIL || type == Sexp::TYPE_REF;
 }
 
 static bool is_char_in_symbol(char c) {
@@ -188,10 +197,64 @@ Sexp parse_sexp(std::string_view src, Heap& heap) {
     return pcs[0].the_list;
 }
 
-std::string dump_sexp(Sexp sexp, const Heap& heap) {
+std::string dump_sexp(const Sexp& sexp, const Heap& heap) {
     std::string result;
 
-    // TODO
+    struct PrinterStackFrame {
+        const Sexp* sexp;
+    };
+
+    std::vector<PrinterStackFrame> cs;
+    cs.push_back(PrinterStackFrame{
+        .sexp = &sexp,
+    });
+
+    while (!cs.empty()) {
+        auto& psf = cs.back();
+        ScopeGuard _ = [&]() { cs.pop_back(); };
+
+        switch (psf.sexp->get_type()) {
+            using enum Sexp::Type;
+
+            case TYPE_NIL: {
+                result += "()";
+            } break;
+
+            case TYPE_NUM: {
+                auto v = psf.sexp->as<double>();
+
+                constexpr auto BUF_SIZE = std::numeric_limits<double>::max_digits10;
+                char buf[BUF_SIZE];
+                auto res = std::to_chars(buf, buf + BUF_SIZE, v);
+                
+                if (res.ec == std::errc()) {
+                    result += std::string_view(buf, res.ptr);
+                } else {
+                    throw "Error formatting number.";
+                }
+            } break;
+
+            case TYPE_STRING: {
+                auto& v = psf.sexp->as<std::string>();
+
+                result += '"';
+                result += v;
+                result += '"';
+            } break;
+
+            case TYPE_SYMBOL: {
+                auto& v = psf.sexp->as<Symbol>();
+
+                result += v.name;
+            }
+
+            case TYPE_REF: {
+                traverse_list(*psf.sexp, heap, [&](auto&& elm) {
+                    cs.push_back(PrinterStackFrame{ .sexp = &elm });
+                });
+            } break;
+        }
+    }
 
     return result;
 }
