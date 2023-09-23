@@ -1,0 +1,24 @@
+1
+
+2
+
+3
+
+"test"
+
+word
+
+(1 2 3)
+
+(1 (2 3))
+
+(symbol)
+
+(symbol (and nesting symbols))
+
+(symbol (and ("mixed" nesting 5 symbols)))
+
+(define (my-function a b)
+  (+ a b))
+
+(define my-list (foo bar "a string" 42 3.14159 () "more string"))

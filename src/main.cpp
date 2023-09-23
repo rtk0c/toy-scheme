@@ -1,29 +1,38 @@
 import std;
+import std.compat;
 import yawarakai;
 
+namespace fs = std::filesystem;
 using namespace std::literals;
 
 int main(int argc, char** argv) {
-    // yawarakai::Memory mem;
-    constexpr std::string_view test_src = R"""(
-1
-2
-3
-"test"
-word
-(1 2 3)
-(1 (2 3))
-(symbol)
-(symbol (and nesting symbols))
-(symbol (and ("mixed" nesting 5 symbols)))
-(define (my-function a b)
-  (+ a b))
-(define my-list (foo bar "a string" 42 3.14159 () "more string"))
-)"""sv;
-    yawarakai::Heap heap;
-    auto sexps = yawarakai::parse_sexp(test_src, heap);
-    for (auto& sexp : sexps) {
-        std::cout << yawarakai::dump_sexp(sexp, heap) << '\n';
+    if (argc > 1) {
+        fs::path input_file(argv[1]);
+        
+        std::ifstream ifs(input_file);
+        if (!ifs) {
+            std::cerr << "Unable to open input file.\n";
+            return -1;
+        }
+
+        ifs.seekg(0, std::ios::end);
+        size_t input_size = ifs.tellg();
+
+        auto buf = std::make_unique<char[]>(input_size);
+        ifs.seekg(0);
+        ifs.read(buf.get(), input_size);
+
+        std::string_view input(buf.get(), input_size);
+        
+        yawarakai::Heap heap;
+        auto sexps = yawarakai::parse_sexp(input, heap);
+        for (auto& sexp : sexps) {
+            std::cout << yawarakai::dump_sexp(sexp, heap) << '\n';
+        }
+
+        return 0;
     }
+
+    std::cerr << "Supply an input file to run it.\n";
     return 0;
 }
