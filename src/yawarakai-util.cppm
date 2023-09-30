@@ -32,4 +32,18 @@ struct ScopeGuard {
     void cancel() { _canceled = true; }
 };
 
+// A general sentinel type
+struct CommonSentinel {};
+
+template <typename TPayload, typename TIter>
+struct Iterable {
+    using Iterator = TIter;
+    using Sentinel = TIter::Sentinel;
+
+    TPayload payload;
+
+    Iterator begin() const { return Iterator(payload); }
+    Sentinel end() const { return Sentinel(); }
+};
+
 }

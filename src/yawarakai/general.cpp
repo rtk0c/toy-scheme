@@ -63,7 +63,7 @@ const Sexp& list_nth_elm(const Sexp& list, int idx, Environment& env) {
     return car(*curr, env);
 }
 
-void list_nth_at_beg(const Sexp& list, std::initializer_list<const Sexp**> out, Environment& env) {
+void list_get_prefix(const Sexp& list, std::initializer_list<const Sexp**> out, Environment& env) {
     const Sexp* curr = &list;
     auto it = out.begin();
     while (curr->get_type() == Sexp::TYPE_REF) {
@@ -159,7 +159,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
             while (true) {
                 // Break conditions
                 if (cursor >= src.length())
-                    throw "Error: unexpected end of file while parsing string";
+                    throw "Error: unexpected EOF while parsing string";
                 if (src[cursor] == '"')
                     break;
 
@@ -203,6 +203,21 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
             );
 
             continue;
+        }
+
+        if (src[cursor] == '#') {
+            cursor += 1;
+            if (cursor >= src.length()) throw "Error: unexpected EOF while parsing #-symbols";
+
+            char next_c = src[cursor];
+            cursor += 1;
+
+            switch (next_c) {
+                case 't': push_sexp_to_parent(Sexp(true)); continue;
+                case 'f': push_sexp_to_parent(Sexp(false)); continue;
+                case ':': break; // TODO keyword argument
+                default: throw "Error: invalid #-symbol";
+            }
         }
 
         {
@@ -249,7 +264,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
     return std::move(cs[0].children);
 }
 
-void dump_sexp_impl(std::string& output, const Sexp& sexp, const Environment& env) {
+void dump_sexp_impl(std::string& output, const Sexp& sexp, Environment& env) {
     switch (sexp.get_type()) {
         using enum Sexp::Type;
 
@@ -271,6 +286,11 @@ void dump_sexp_impl(std::string& output, const Sexp& sexp, const Environment& en
             }
         } break;
 
+        case TYPE_BOOL: {
+            auto v = sexp.as<bool>();
+            output += v ? "#t" : "#f";
+        } break;
+
         case TYPE_STRING: {
             auto& v = sexp.as<std::string>();
 
@@ -287,10 +307,10 @@ void dump_sexp_impl(std::string& output, const Sexp& sexp, const Environment& en
 
         case TYPE_REF: {
             output += "(";
-            traverse_list(sexp, env, [&](const Sexp& elm) {
+            for (const Sexp& elm : iterate(sexp, env)) {
                 dump_sexp_impl(output, elm, env);
                 output += " ";
-            });
+            }
             output.pop_back(); // Remove the trailing space
             output += ")";
         } break;
@@ -309,7 +329,7 @@ void dump_sexp_impl(std::string& output, const Sexp& sexp, const Environment& en
     }
 }
 
-std::string dump_sexp(const Sexp& sexp, const Environment& env) {
+std::string dump_sexp(const Sexp& sexp, Environment& env) {
     std::string result;
     dump_sexp_impl(result, sexp, env);
     return result;

@@ -1,5 +1,7 @@
 export module yawarakai:lisp;
 
+import :util;
+
 import std;
 
 #include "yawarakai/util.hpp"
@@ -141,21 +143,47 @@ const Sexp& car(const Sexp& the_cons, Environment& env);
 const Sexp& cdr(const Sexp& the_cons, Environment& env);
 const Sexp& list_nth_elm(const Sexp& list, int idx, Environment& env);
 
-void list_nth_at_beg(const Sexp& list, std::initializer_list<const Sexp**> out, Environment& env);
+void list_get_prefix(const Sexp& list, std::initializer_list<const Sexp**> out, Environment& env);
 
-template <typename THeap, typename TFunction>
-void traverse_list(const Sexp& list, THeap&& env, TFunction&& callback) {
-    const Sexp* curr = &list;
-    while (curr->get_type() == Sexp::TYPE_REF) {
-        auto ref = curr->as<MemoryLocation>();
-        auto& cons_cell = env.lookup(ref);
-        callback(cons_cell.car);
-        curr = &cons_cell.cdr;
+struct SexpListIterator {
+    using Sentinel = CommonSentinel;
+
+    ConsCell* curr;
+    Environment* env;
+
+    static ConsCell* calc_next(const Sexp& s, Environment& env) {
+        if (s.get_type() == Sexp::TYPE_REF) {
+            return &env.lookup(s.as<MemoryLocation>());
+        } else {
+            return nullptr;
+        }
     }
+
+    SexpListIterator(const Sexp& s, Environment& env)
+        : curr{ calc_next(s, env) }
+        , env{ &env } {}
+
+    Sexp& operator*() const {
+        return curr->car;
+    }
+
+    SexpListIterator& operator++() {
+        curr = calc_next(curr->cdr, *env);
+        return *this;
+    }
+
+    bool operator==(CommonSentinel) const {
+        return curr == nullptr;
+    }
+
+};
+
+auto iterate(const Sexp& s, Environment& env) {
+    return Iterable<SexpListIterator, SexpListIterator>(SexpListIterator(s, env));
 }
 
 std::vector<Sexp> parse_sexp(std::string_view src, Environment& env);
-std::string dump_sexp(const Sexp& sexp, const Environment& env);
+std::string dump_sexp(const Sexp& sexp, Environment& env);
 
 Sexp eval(const Sexp& sexp, Environment& env);
 
