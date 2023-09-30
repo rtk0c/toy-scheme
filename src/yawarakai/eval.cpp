@@ -11,7 +11,7 @@ namespace yawarakai {
 Sexp builtin_add(const Sexp& params, Environment& env) {
     double res = 0.0;
     for (const Sexp& param : iterate(params, env)) {
-        res += param.as_or_error<double>("Error: + cannot accept non-numerical parameters"sv); 
+        res += eval(param, env).as_or_error<double>("Error: + cannot accept non-numerical parameters"sv); 
     }
 
     return Sexp(res);
@@ -22,7 +22,7 @@ Sexp builtin_sub(const Sexp& params, Environment& env) {
 
     double res = first_cons.car.as<double>();
     for (const Sexp& param : iterate(first_cons.cdr, env)) {
-        res -= param.as_or_error<double>("Error: - cannot accept non-numerical parameters"sv); 
+        res -= eval(param, env).as_or_error<double>("Error: - cannot accept non-numerical parameters"sv); 
     }
 
     return Sexp(res);
@@ -31,7 +31,7 @@ Sexp builtin_sub(const Sexp& params, Environment& env) {
 Sexp builtin_mul(const Sexp& params, Environment& env) {
     double res = 1.0;
     for (const Sexp& param : iterate(params, env)) {
-        res *= param.as_or_error<double>("Error: * cannot accept non-numerical parameters"sv); 
+        res *= eval(param, env).as_or_error<double>("Error: * cannot accept non-numerical parameters"sv); 
     }
 
     return Sexp(res);
@@ -42,7 +42,7 @@ Sexp builtin_div(const Sexp& params, Environment& env) {
 
     double res = first_cons.car.as<double>();
     for (const Sexp& param : iterate(first_cons.cdr, env)) {
-        res /= param.as_or_error<double>("Error: / cannot accept non-numerical parameters"sv); 
+        res /= eval(param, env).as_or_error<double>("Error: / cannot accept non-numerical parameters"sv); 
     }
 
     return Sexp(res);
@@ -74,31 +74,38 @@ template <typename Op>
 Sexp builtin_binary_op(const Sexp& params, Environment& env) {
     using enum Sexp::Type;
 
-    const Sexp* a;
-    const Sexp* b;
-    list_get_prefix(params, {&a, &b}, env);
+    const Sexp* a_lit;
+    const Sexp* b_lit;
+    list_get_prefix(params, {&a_lit, &b_lit}, env);
 
-    if (a->get_type() == TYPE_NUM && b->get_type() == TYPE_NUM) {
-        auto a_v = a->as<double>();
-        auto b_v = b->as<double>();
-        auto res = Op{}(a_v, b_v);
+    auto a = eval(*a_lit, env);
+    auto b = eval(*b_lit, env);
+
+    if (a.get_type() == TYPE_NUM && b.get_type() == TYPE_NUM) {
+        auto res = Op{}(
+            a.as<double>(),
+            b.as<double>());
         return Sexp(res);
     } else {
         throw "Error: invalid types";
     }
 }
 
-Sexp builtin_car(const Sexp& params, Environment& env) { return car(list_nth_elm(params, 0, env), env); }
-Sexp builtin_cdr(const Sexp& params, Environment& env) { return cdr(list_nth_elm(params, 0, env), env); }
+Sexp builtin_car(const Sexp& params, Environment& env) { return car(eval(list_nth_elm(params, 0, env), env), env); }
+Sexp builtin_cdr(const Sexp& params, Environment& env) { return cdr(eval(list_nth_elm(params, 0, env), env), env); }
 Sexp builtin_cons(const Sexp& params, Environment& env) {
     const Sexp* a;
     const Sexp* b;
     list_get_prefix(params, {&a, &b}, env);
-    return cons(*a, *b, env);
+    return cons(
+        eval(*a, env),
+        eval(*b, env),
+        env);
 }
 
 Sexp builtin_is_null(const Sexp& params, Environment& env) {
-    return list_nth_elm(params, 0, env).get_type() == Sexp::TYPE_NIL;
+    auto& v = list_nth_elm(params, 0, env);
+    return eval(v, env).get_type() == Sexp::TYPE_NIL;
 }
 
 Sexp builtin_quote(const Sexp& params, Environment& env) {
