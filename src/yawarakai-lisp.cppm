@@ -95,7 +95,7 @@ struct UserProc {
 };
 
 struct LexcialScope {
-    std::map<std::string, Sexp> bindings;
+    std::map<std::string, Sexp, std::less<>> bindings;
 };
 
 struct Environment {
@@ -143,7 +143,7 @@ const Sexp& car(const Sexp& the_cons, Environment& env);
 const Sexp& cdr(const Sexp& the_cons, Environment& env);
 const Sexp& list_nth_elm(const Sexp& list, int idx, Environment& env);
 
-void list_get_prefix(const Sexp& list, std::initializer_list<const Sexp**> out, Environment& env);
+void list_get_prefix(const Sexp& list, std::initializer_list<const Sexp**> out_prefix, const Sexp** out_rest, Environment& env);
 
 struct SexpListIterator {
     using Sentinel = CommonSentinel;

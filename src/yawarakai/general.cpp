@@ -8,6 +8,7 @@ using namespace std::literals;
 namespace yawarakai {
 
 Environment::Environment() {
+    scopes.emplace_back();
 }
 
 MemoryLocation Environment::push(ConsCell cons) {
@@ -65,16 +66,18 @@ const Sexp& list_nth_elm(const Sexp& list, int idx, Environment& env) {
     return car(*curr, env);
 }
 
-void list_get_prefix(const Sexp& list, std::initializer_list<const Sexp**> out, Environment& env) {
+void list_get_prefix(const Sexp& list, std::initializer_list<const Sexp**> out_prefix, const Sexp** out_rest, Environment& env) {
     const Sexp* curr = &list;
-    auto it = out.begin();
+    auto it = out_prefix.begin();
     while (curr->get_type() == Sexp::TYPE_REF) {
         auto& cons_cell = env.lookup(curr->as<MemoryLocation>());
         **it = &cons_cell.car;
-        if (++it == out.end())
-            break;
         curr = &cons_cell.cdr;
+        if (++it == out_prefix.end())
+            break;
     }
+    if (out_rest)
+        *out_rest = curr;
 }
 
 std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {

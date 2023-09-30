@@ -52,7 +52,7 @@ Sexp builtin_if(const Sexp& params, Environment& env) {
     const Sexp* cond;
     const Sexp* true_case;
     const Sexp* false_case;
-    list_get_prefix(params, {&cond, &true_case, &false_case}, env);
+    list_get_prefix(params, {&cond, &true_case, &false_case}, nullptr, env);
 
     Sexp cond_val = eval(*cond, env);
     if (cond_val.is<bool>() && cond_val.as<bool>()) {
@@ -65,7 +65,7 @@ Sexp builtin_if(const Sexp& params, Environment& env) {
 Sexp builtin_eq(const Sexp& params, Environment& env) {
     const Sexp* a;
     const Sexp* b;
-    list_get_prefix(params, {&a, &b}, env);
+    list_get_prefix(params, {&a, &b}, nullptr, env);
 
     return {}; // TODO
 }
@@ -76,7 +76,7 @@ Sexp builtin_binary_op(const Sexp& params, Environment& env) {
 
     const Sexp* a_lit;
     const Sexp* b_lit;
-    list_get_prefix(params, {&a_lit, &b_lit}, env);
+    list_get_prefix(params, {&a_lit, &b_lit}, nullptr, env);
 
     auto a = eval(*a_lit, env);
     auto b = eval(*b_lit, env);
@@ -96,7 +96,7 @@ Sexp builtin_cdr(const Sexp& params, Environment& env) { return cdr(eval(list_nt
 Sexp builtin_cons(const Sexp& params, Environment& env) {
     const Sexp* a;
     const Sexp* b;
-    list_get_prefix(params, {&a, &b}, env);
+    list_get_prefix(params, {&a, &b}, nullptr, env);
     return cons(
         eval(*a, env),
         eval(*b, env),
@@ -113,9 +113,46 @@ Sexp builtin_quote(const Sexp& params, Environment& env) {
 }
 
 Sexp builtin_define(const Sexp& params, Environment& env) {
-    // TODO
+    auto& curr_scope = env.scopes.back().bindings;
 
-    return Sexp{};
+    const Sexp* declaration;
+    const Sexp* body;
+    list_get_prefix(params, {&declaration}, &body, env);
+
+    switch (declaration->get_type()) {
+        using enum Sexp::Type;
+
+        // Defining a value
+        case TYPE_SYMBOL: {
+            auto& name = declaration->as<Symbol>().name;
+
+            const Sexp* val;
+            const Sexp* rest;
+            list_get_prefix(*body, {&val}, &rest, env);
+
+            if (rest->get_type() != TYPE_NIL) throw "Error: (define) has too many arguments";
+
+            curr_scope.insert_or_assign(name, eval(*val, env));
+        } break;
+
+        // Defining a function
+        case TYPE_REF: {
+            const Sexp* decl_name;
+            const Sexp* decl_params;
+            list_get_prefix(*declaration, {&decl_name}, &decl_params, env);
+
+            if (decl_name->get_type() != TYPE_SYMBOL) throw "Error: proc name must be a symbol";
+
+            auto& name = decl_name->as<Symbol>().name;
+            
+            // TODO
+        } break;
+
+        default:
+            throw "Error: (define) name must be a symbol";
+    }
+
+    return Sexp();
 }
 
 #define ITEM(name, func) { name, BuiltinProc{ name, func } }
@@ -158,7 +195,15 @@ Sexp eval(const Sexp& sexp, Environment& env) {
         } break;
 
         case TYPE_SYMBOL: {
-            // TODO eval variable
+            auto& curr_scope = env.scopes.back().bindings;
+            auto& name = sexp.as<Symbol>().name;
+            
+            auto iter = curr_scope.find(name);
+            if (iter != curr_scope.end()) {
+                return iter->second;
+            } else {
+                throw "Error: undefined value";
+            }
         } break;
 
         // For literal x, (eval x) => x
