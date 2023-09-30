@@ -50,10 +50,12 @@ const Sexp& cdr(const Sexp& the_cons, Environment& env) {
 
 const Sexp& list_nth_elm(const Sexp& list, int idx, Environment& env) {
     const Sexp* curr = &list;
-    int n_to_go = idx;
+    int n_to_go = idx + 1;
     while (curr->get_type() == Sexp::TYPE_REF) {
         auto& cons_cell = env.lookup(curr->as<MemoryLocation>());
         n_to_go -= 1;
+        if (n_to_go == 0)
+            break;
         curr = &cons_cell.cdr;
     }
 

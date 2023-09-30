@@ -62,6 +62,49 @@ Sexp builtin_if(const Sexp& params, Environment& env) {
     }
 }
 
+Sexp builtin_eq(const Sexp& params, Environment& env) {
+    const Sexp* a;
+    const Sexp* b;
+    list_get_prefix(params, {&a, &b}, env);
+
+    return {}; // TODO
+}
+
+template <typename Op>
+Sexp builtin_binary_op(const Sexp& params, Environment& env) {
+    using enum Sexp::Type;
+
+    const Sexp* a;
+    const Sexp* b;
+    list_get_prefix(params, {&a, &b}, env);
+
+    if (a->get_type() == TYPE_NUM && b->get_type() == TYPE_NUM) {
+        auto a_v = a->as<double>();
+        auto b_v = b->as<double>();
+        auto res = Op{}(a_v, b_v);
+        return Sexp(res);
+    } else {
+        throw "Error: invalid types";
+    }
+}
+
+Sexp builtin_car(const Sexp& params, Environment& env) { return car(list_nth_elm(params, 0, env), env); }
+Sexp builtin_cdr(const Sexp& params, Environment& env) { return cdr(list_nth_elm(params, 0, env), env); }
+Sexp builtin_cons(const Sexp& params, Environment& env) {
+    const Sexp* a;
+    const Sexp* b;
+    list_get_prefix(params, {&a, &b}, env);
+    return cons(*a, *b, env);
+}
+
+Sexp builtin_is_null(const Sexp& params, Environment& env) {
+    return list_nth_elm(params, 0, env).get_type() == Sexp::TYPE_NIL;
+}
+
+Sexp builtin_quote(const Sexp& params, Environment& env) {
+    return list_nth_elm(params, 0, env);
+}
+
 Sexp builtin_define(const Sexp& params, Environment& env) {
     // TODO
 
@@ -75,6 +118,16 @@ const std::map<std::string_view, BuiltinProc> BUILTINS{
     ITEM("*"sv, builtin_mul),
     ITEM("/"sv, builtin_div),
     ITEM("if"sv, builtin_if),
+    ITEM("="sv, builtin_eq),
+    ITEM("<"sv, builtin_binary_op<std::less<>>),
+    ITEM("<="sv, builtin_binary_op<std::less_equal<>>),
+    ITEM(">"sv, builtin_binary_op<std::greater<>>),
+    ITEM(">="sv, builtin_binary_op<std::greater_equal<>>),
+    ITEM("car"sv, builtin_car),
+    ITEM("cdr"sv, builtin_cdr),
+    ITEM("cons"sv, builtin_cons),
+    ITEM("null?"sv, builtin_is_null),
+    ITEM("quote"sv, builtin_quote),
     ITEM("define"sv, builtin_define),
 };
 #undef ITEM
@@ -82,25 +135,28 @@ const std::map<std::string_view, BuiltinProc> BUILTINS{
 Sexp eval(const Sexp& sexp, Environment& env) {
     using enum Sexp::Type;
 
-    // For some non-list value x,
-    // (eval x) => x
-    if (sexp.get_type() != TYPE_REF) {
-        return sexp;
+    switch (sexp.get_type()) {
+        case TYPE_REF: {
+            auto& cons_cell = env.lookup(sexp.as<MemoryLocation>());
+            auto& sym = cons_cell.car;
+            auto& params = cons_cell.cdr;
+
+            if (sym.get_type() != TYPE_SYMBOL) throw "Invalid eval format";
+            const auto& proc_name = sym.as<Symbol>().name;
+
+            if (auto iter = BUILTINS.find(proc_name); iter != BUILTINS.end()) {
+                auto& builtin_proc = iter->second;
+                return builtin_proc.fn(params, env);
+            }
+        } break;
+
+        case TYPE_SYMBOL: {
+            // TODO eval variable
+        } break;
+
+        // For literal x, (eval x) => x
+        default: return sexp;
     }
-
-    auto& cons_cell = env.lookup(sexp.as<MemoryLocation>());
-    auto& sym = cons_cell.car;
-    auto& params = cons_cell.cdr;
-
-    if (sym.get_type() != TYPE_SYMBOL) throw "Invalid eval format";
-    const auto& proc_name = sym.as<Symbol>().name;
-
-    if (auto iter = BUILTINS.find(proc_name); iter != BUILTINS.end()) {
-        auto& builtin_proc = iter->second;
-        return builtin_proc.fn(params, env);
-    }
-
-    return {}; // TODO
 }
 
 }

@@ -71,7 +71,7 @@ struct Sexp {
 };
 
 Sexp operator ""_sym(const char* str, size_t len) {
-    return Sexp(std::string(str, len));
+    return Sexp(Symbol(std::string(str, len)));
 }
 
 /// A heap allocated cons, with a car/left and cdr/right Sexp
