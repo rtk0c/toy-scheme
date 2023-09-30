@@ -25,15 +25,12 @@ ConsCell& Environment::lookup(MemoryLocation addr) {
 
 Sexp cons(Sexp a, Sexp b, Environment& env) {
     auto addr = env.push(ConsCell{ std::move(a), std::move(b) });
-    Sexp res;
-    res.set(addr);
-    return res;
+    return Sexp(addr);
 }
 
 void cons_inplace(Sexp a, Sexp& list, Environment& env) {
     auto addr = env.push(ConsCell{ std::move(a), std::move(list) });
-    list = Sexp();
-    list.set(addr);
+    list = Sexp(addr);
 }
 
 bool is_list(const ConsCell& cons) {

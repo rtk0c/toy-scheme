@@ -8,15 +8,13 @@ using namespace std::literals;
 
 namespace yawarakai {
 
-#define RETURN_SEXP(v) { Sexp s; s.set(v); return s; }
-
 Sexp builtin_add(const Sexp& params, Environment& env) {
     double res = 0.0;
     traverse_list(params, env, [&res](const Sexp& param) {
         res += param.as_or_error<double>("Error: + cannot accept non-numerical parameters"sv); 
     });
-    
-    RETURN_SEXP(res);
+
+    return Sexp(res);
 }
 
 Sexp builtin_sub(const Sexp& params, Environment& env) {
@@ -26,8 +24,8 @@ Sexp builtin_sub(const Sexp& params, Environment& env) {
     traverse_list(first_cons.cdr, env, [&res](const Sexp& param) {
         res -= param.as_or_error<double>("Error: - cannot accept non-numerical parameters"sv); 
     });
-    
-    RETURN_SEXP(res);
+
+    return Sexp(res);
 }
 
 Sexp builtin_mul(const Sexp& params, Environment& env) {
@@ -35,8 +33,8 @@ Sexp builtin_mul(const Sexp& params, Environment& env) {
     traverse_list(params, env, [&res](const Sexp& param) {
         res *= param.as_or_error<double>("Error: * cannot accept non-numerical parameters"sv); 
     });
-    
-    RETURN_SEXP(res);
+
+    return Sexp(res);
 }
 
 Sexp builtin_div(const Sexp& params, Environment& env) {
@@ -46,8 +44,8 @@ Sexp builtin_div(const Sexp& params, Environment& env) {
     traverse_list(first_cons.cdr, env, [&res](const Sexp& param) {
         res /= param.as_or_error<double>("Error: / cannot accept non-numerical parameters"sv); 
     });
-    
-    RETURN_SEXP(res);
+
+    return Sexp(res);
 }
 
 Sexp builtin_if(const Sexp& params, Environment& env) {
@@ -79,6 +77,7 @@ const std::map<std::string_view, BuiltinProc> BUILTINS{
     ITEM("if"sv, builtin_if),
     ITEM("define"sv, builtin_define),
 };
+#undef ITEM
 
 Sexp eval(const Sexp& sexp, Environment& env) {
     using enum Sexp::Type;

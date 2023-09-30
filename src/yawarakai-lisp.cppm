@@ -33,6 +33,8 @@ struct Sexp {
         TYPE_BUILTIN_PROC, TYPE_USER_PROC,
     };
 
+    // NOTE: visible, but not intended to be touched!
+    //       Sexp should act like a custom union type, it just happens to be implemented with std::variant
     Storage _value;
 
     Sexp() : _value{ Nil() } {}
@@ -60,20 +62,10 @@ struct Sexp {
             throw err_msg;
         }
     }
-
-    void set_nil() { _value = Nil(); }
-    void set(Nil) { set_nil(); }
-    void set(double v) { _value = v; }
-    void set(std::string v) { _value = std::move(v); }
-    void set_symbol(std::string name) { _value = Symbol(std::move(name)); }
-    void set(Symbol v) { _value = std::move(v); }
-    void set(MemoryLocation v) { _value = std::move(v); }
 };
 
 Sexp operator ""_sym(const char* str, size_t len) {
-    Sexp sexp;
-    sexp.set_symbol(std::string(str, len));
-    return sexp;
+    return Sexp(std::string(str, len));
 }
 
 /// A heap allocated cons, with a car/left and cdr/right Sexp
