@@ -50,9 +50,10 @@ struct Sexp {
     bool is() const { return std::holds_alternative<T>(_value); }
     
     template <typename T>
-    T& as() { return std::get<T>(_value); }
+    const T& as() const { return *std::get_if<T>(&_value); }
+
     template <typename T>
-    const T& as() const { return std::get<T>(_value); }
+    T& as() { return const_cast<T&>(const_cast<const Sexp*>(this)->as<T>()); }
 
     template <typename T>
     const T& as_or_error(std::string_view err_msg) const {
@@ -62,6 +63,9 @@ struct Sexp {
             throw err_msg;
         }
     }
+    
+    template <typename T>
+    T& as_or_error(std::string_view err_msg) { return const_cast<T&>(const_cast<const Sexp*>(this)->as_or_error<T>(err_msg)); }
 };
 
 Sexp operator ""_sym(const char* str, size_t len) {
