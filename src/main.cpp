@@ -17,10 +17,10 @@ int main(int argc, char** argv) {
         std::stringstream buffer;
         buffer << ifs.rdbuf();
 
-        yawarakai::Heap heap;
-        auto sexps = yawarakai::parse_sexp(buffer.view(), heap);
+        yawarakai::Environment env;
+        auto sexps = yawarakai::parse_sexp(buffer.view(), env);
         for (auto& sexp : sexps) {
-            std::cout << yawarakai::dump_sexp(sexp, heap) << '\n';
+            std::cout << yawarakai::dump_sexp(yawarakai::eval(sexp, env), env) << '\n';
         }
 
         return 0;

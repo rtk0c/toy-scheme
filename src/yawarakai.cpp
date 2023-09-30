@@ -7,31 +7,31 @@ using namespace std::literals;
 
 namespace yawarakai {
 
-Heap::Heap() {
+Environment::Environment() {
 }
 
-MemoryLocation Heap::push(ConsCell cons) {
+MemoryLocation Environment::push(ConsCell cons) {
     storage.push_back(std::move(cons));
     return storage.size() - 1;
 }
 
-const ConsCell& Heap::lookup(MemoryLocation addr) const {
+const ConsCell& Environment::lookup(MemoryLocation addr) const {
     return storage[addr];
 }
 
-ConsCell& Heap::lookup(MemoryLocation addr) {
+ConsCell& Environment::lookup(MemoryLocation addr) {
     return storage[addr];
 }
 
-Sexp cons(Sexp a, Sexp b, Heap& heap) {
-    auto addr = heap.push(ConsCell{ std::move(a), std::move(b) });
+Sexp cons(Sexp a, Sexp b, Environment& env) {
+    auto addr = env.push(ConsCell{ std::move(a), std::move(b) });
     Sexp res;
     res.set(addr);
     return res;
 }
 
-void cons_inplace(Sexp a, Sexp& list, Heap& heap) {
-    auto addr = heap.push(ConsCell{ std::move(a), std::move(list) });
+void cons_inplace(Sexp a, Sexp& list, Environment& env) {
+    auto addr = env.push(ConsCell{ std::move(a), std::move(list) });
     list = Sexp();
     list.set(addr);
 }
@@ -41,7 +41,44 @@ bool is_list(const ConsCell& cons) {
     return type == Sexp::TYPE_NIL || type == Sexp::TYPE_REF;
 }
 
-std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
+const Sexp& car(const Sexp& the_cons, Environment& env) {
+    auto ref = the_cons.as<MemoryLocation>();
+    return env.lookup(ref).car;
+}
+
+const Sexp& cdr(const Sexp& the_cons, Environment& env) {
+    auto ref = the_cons.as<MemoryLocation>();
+    return env.lookup(ref).cdr;
+}
+
+const Sexp& list_nth_elm(const Sexp& list, int idx, Environment& env) {
+    const Sexp* curr = &list;
+    int n_to_go = idx;
+    while (curr->get_type() == Sexp::TYPE_REF) {
+        auto& cons_cell = env.lookup(curr->as<MemoryLocation>());
+        n_to_go -= 1;
+        curr = &cons_cell.cdr;
+    }
+
+    if (n_to_go != 0) {
+        throw "Index out of bounds";
+    }
+    return car(*curr, env);
+}
+
+void list_nth_at_beg(const Sexp& list, std::initializer_list<const Sexp**> out, Environment& env) {
+    const Sexp* curr = &list;
+    auto it = out.begin();
+    while (curr->get_type() == Sexp::TYPE_REF) {
+        auto& cons_cell = env.lookup(curr->as<MemoryLocation>());
+        **it = &cons_cell.car;
+        if (++it == out.end())
+            break;
+        curr = &cons_cell.cdr;
+    }
+}
+
+std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
     struct ParserStackFrame {
         std::vector<Sexp> children;
         const Sexp* wrapper = nullptr;
@@ -57,7 +94,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
         auto& target = cs.back().children;
         if (next_sexp_wrapper) {
             // Turns (my-sexp la la la) into (<the wrapper> (my-sexp la la la))
-            target.push_back(make_list_v(heap, *next_sexp_wrapper, std::move(sexp)));
+            target.push_back(make_list_v(env, *next_sexp_wrapper, std::move(sexp)));
             next_sexp_wrapper = nullptr;
         } else {
             target.push_back(std::move(sexp));
@@ -78,9 +115,9 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
         }
 
 #define CHECK_FOR_WRAP(literal, sym) if (src[cursor] == literal) { next_sexp_wrapper = &sym; cursor++; continue; }
-        CHECK_FOR_WRAP('\'', heap.sym.quote);
-        CHECK_FOR_WRAP(',', heap.sym.unquote);
-        CHECK_FOR_WRAP('`', heap.sym.quasiquote);
+        CHECK_FOR_WRAP('\'', env.sym.quote);
+        CHECK_FOR_WRAP(',', env.sym.unquote);
+        CHECK_FOR_WRAP('`', env.sym.quasiquote);
 #undef CHECK_FOR_WRAP
 
         if (src[cursor] == '(') {
@@ -104,10 +141,10 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
             ParserStackFrame& curr = cs.back();
             Sexp list;
             for (auto it = curr.children.rbegin(); it != curr.children.rend(); ++it) {
-                cons_inplace(std::move(*it), list, heap);
+                cons_inplace(std::move(*it), list, env);
             }
             if (curr.wrapper)
-                list = make_list_v(heap, *curr.wrapper, std::move(list));
+                list = make_list_v(env, *curr.wrapper, std::move(list));
             cs.pop_back(); // Removes `curr`
 
             auto& parent = cs.back();
@@ -164,10 +201,9 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
                 i += 1;
             }
 
-            Sexp sexp;
-            sexp.set(std::move(str));
-
-            push_sexp_to_parent(std::move(sexp));
+            push_sexp_to_parent(
+                Sexp(std::move(str))
+            );
 
             continue;
         }
@@ -176,10 +212,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
             double v;
             auto [rest, ec] = std::from_chars(&src[cursor], &*src.end(), v);
             if (ec == std::errc()) {
-                Sexp sexp;
-                sexp.set(v);
-
-                push_sexp_to_parent(std::move(sexp));
+                push_sexp_to_parent(Sexp(v));
 
                 cursor += rest - &src[cursor];
                 continue;
@@ -209,10 +242,9 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
             if (std::isspace(next_c))
                 cursor += 1;
 
-            Sexp sexp;
-            sexp.set(Symbol(std::string(&src[symbol_begin], symbol_size)));
-
-            push_sexp_to_parent(std::move(sexp));
+            push_sexp_to_parent(
+                Sexp(Symbol(std::string(&src[symbol_begin], symbol_size)))
+            );
         }
     }
 
@@ -220,7 +252,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Heap& heap) {
     return std::move(cs[0].children);
 }
 
-void dump_sexp_impl(std::string& output, const Sexp& sexp, const Heap& heap) {
+void dump_sexp_impl(std::string& output, const Sexp& sexp, const Environment& env) {
     switch (sexp.get_type()) {
         using enum Sexp::Type;
 
@@ -258,19 +290,31 @@ void dump_sexp_impl(std::string& output, const Sexp& sexp, const Heap& heap) {
 
         case TYPE_REF: {
             output += "(";
-            traverse_list(sexp, heap, [&](const Sexp& elm) {
-                dump_sexp_impl(output, elm, heap);
+            traverse_list(sexp, env, [&](const Sexp& elm) {
+                dump_sexp_impl(output, elm, env);
                 output += " ";
             });
             output.pop_back(); // Remove the trailing space
             output += ")";
         } break;
+
+        case TYPE_BUILTIN_PROC: {
+            auto& v = *sexp.as<BuiltinProc*>();
+            output += "#BUILTIN:";
+            output += v.name;
+        } break;
+
+        case TYPE_USER_PROC: {
+            auto& v = *sexp.as<UserProc*>();
+            output += "#PROC:";
+            output += v.name;
+        } break;
     }
 }
 
-std::string dump_sexp(const Sexp& sexp, const Heap& heap) {
+std::string dump_sexp(const Sexp& sexp, const Environment& env) {
     std::string result;
-    dump_sexp_impl(result, sexp, heap);
+    dump_sexp_impl(result, sexp, env);
     return result;
 }
 
