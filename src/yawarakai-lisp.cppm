@@ -27,7 +27,7 @@ struct Sexp {
     // NOTE: keep types in std::variant and their corresponding TYPE_XXX indices in sync
     using Storage = std::variant<
         /*s-expression*/ Nil, double, bool, std::string, Symbol, MemoryLocation,
-        /*transient*/ BuiltinProc*, UserProc*>;
+        /*transient*/ const BuiltinProc*, const UserProc*>;
     enum Type {
         // s-expression
         TYPE_NIL, TYPE_NUM, TYPE_BOOL, TYPE_STRING, TYPE_SYMBOL, TYPE_REF,
@@ -45,12 +45,17 @@ struct Sexp {
     Sexp(std::string v) : _value{ std::move(v) } {}
     Sexp(Symbol v) : _value{ std::move(v) } {}
     Sexp(MemoryLocation v) : _value{ std::move(v) } {}
+    Sexp(const BuiltinProc& v) : _value{ &v } {}
+    Sexp(const UserProc& v) : _value{ &v } {}
 
     Type get_type() const { return static_cast<Type>(_value.index()); }
 
+    template <size_t N> auto get() { return *std::get_if<N>(&_value); }
+    template <size_t N> auto get() const { return *std::get_if<N>(&_value); }
+
     template <typename T>
     bool is() const { return std::holds_alternative<T>(_value); }
-    
+
     template <typename T>
     const T& as() const { return *std::get_if<T>(&_value); }
 
@@ -65,7 +70,7 @@ struct Sexp {
             throw err_msg;
         }
     }
-    
+
     template <typename T>
     T& as_or_error(std::string_view err_msg) { return const_cast<T&>(const_cast<const Sexp*>(this)->as_or_error<T>(err_msg)); }
 };
@@ -100,7 +105,8 @@ struct LexcialScope {
 
 struct Environment {
     std::vector<ConsCell> storage;
-    
+    std::deque<UserProc> user_proc_pool;
+
     /// A stack of scopes, added as we call into functions and popped as we exit
     /// `scopes[0]` is always the global scope
     std::vector<LexcialScope> scopes;
@@ -123,6 +129,10 @@ struct Environment {
     MemoryLocation push(ConsCell cons);
     const ConsCell& lookup(MemoryLocation addr) const;
     ConsCell& lookup(MemoryLocation addr);
+
+    const Sexp* lookup_binding(std::string_view name) const;
+    void push_scope() { scopes.emplace_back(); }
+    void pop_scope() { scopes.pop_back(); }
 };
 
 /// Constructs a ConsCell on heap, with car = a and cdr = b, and return a reference Sexp to it.
@@ -159,6 +169,10 @@ struct SexpListIterator {
         }
     }
 
+    SexpListIterator(ConsCell* cons, Environment& env)
+        : curr{ cons }
+        , env{ &env } {}
+
     SexpListIterator(const Sexp& s, Environment& env)
         : curr{ calc_next(s, env) }
         , env{ &env } {}
@@ -176,11 +190,15 @@ struct SexpListIterator {
         return curr == nullptr;
     }
 
+    bool is_end() const {
+        return curr == nullptr;
+    }
 };
 
-auto iterate(const Sexp& s, Environment& env) {
-    return Iterable<SexpListIterator, SexpListIterator>(SexpListIterator(s, env));
-}
+using SexpListIterable = Iterable<SexpListIterator, SexpListIterator>;
+
+SexpListIterable iterate(ConsCell* cons, Environment& env) { return { SexpListIterator(cons, env) }; }
+SexpListIterable iterate(const Sexp& s, Environment& env) { return { SexpListIterator(s, env) }; }
 
 std::vector<Sexp> parse_sexp(std::string_view src, Environment& env);
 std::string dump_sexp(const Sexp& sexp, Environment& env);

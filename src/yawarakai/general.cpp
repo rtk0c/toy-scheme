@@ -24,6 +24,17 @@ ConsCell& Environment::lookup(MemoryLocation addr) {
     return storage[addr];
 }
 
+const Sexp* Environment::lookup_binding(std::string_view name) const {
+    for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
+        auto& scope = *it;
+        auto iter = scope.bindings.find(name);
+        if (iter != scope.bindings.end()) {
+            return &iter->second;
+        }
+    }
+    return nullptr;
+}
+
 Sexp cons(Sexp a, Sexp b, Environment& env) {
     auto addr = env.push(ConsCell{ std::move(a), std::move(b) });
     return Sexp(addr);
@@ -150,7 +161,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
             cs.pop_back(); // Removes `curr`
 
             auto& parent = cs.back();
-            parent.children.push_back(std::move(list));            
+            parent.children.push_back(std::move(list));
 
             cursor += 1;
             continue;
@@ -280,10 +291,12 @@ void dump_sexp_impl(std::string& output, const Sexp& sexp, Environment& env) {
         case TYPE_NUM: {
             auto v = sexp.as<double>();
 
-            constexpr auto BUF_SIZE = std::numeric_limits<double>::max_digits10;
+            // TODO I have no idea why max_digits10 isn't big enough
+            //constexpr auto BUF_SIZE = std::numeric_limits<double>::max_digits10;
+            const auto BUF_SIZE = 32;
             char buf[BUF_SIZE];
             auto res = std::to_chars(buf, buf + BUF_SIZE, v);
-            
+
             if (res.ec == std::errc()) {
                 output += std::string_view(buf, res.ptr);
             } else {
@@ -321,13 +334,13 @@ void dump_sexp_impl(std::string& output, const Sexp& sexp, Environment& env) {
         } break;
 
         case TYPE_BUILTIN_PROC: {
-            auto& v = *sexp.as<BuiltinProc*>();
+            auto& v = *sexp.get<TYPE_BUILTIN_PROC>();
             output += "#BUILTIN:";
             output += v.name;
         } break;
 
         case TYPE_USER_PROC: {
-            auto& v = *sexp.as<UserProc*>();
+            auto& v = *sexp.get<TYPE_USER_PROC>();
             output += "#PROC:";
             output += v.name;
         } break;

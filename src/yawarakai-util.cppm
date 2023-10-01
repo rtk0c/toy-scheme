@@ -42,7 +42,7 @@ struct Iterable {
 
     TPayload payload;
 
-    Iterator begin() const { return Iterator(payload); }
+    Iterator begin() const { return Iterator(std::move(payload)); }
     Sentinel end() const { return Sentinel(); }
 };
 

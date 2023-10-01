@@ -11,18 +11,29 @@ namespace yawarakai {
 Sexp builtin_add(const Sexp& params, Environment& env) {
     double res = 0.0;
     for (const Sexp& param : iterate(params, env)) {
-        res += eval(param, env).as_or_error<double>("Error: + cannot accept non-numerical parameters"sv); 
+        res += eval(param, env).as_or_error<double>("Error: + cannot accept non-numerical parameters"sv);
     }
 
     return Sexp(res);
 }
 
 Sexp builtin_sub(const Sexp& params, Environment& env) {
-    auto& first_cons = env.lookup(params.as<MemoryLocation>());
+    double res;
+    int param_cnt = 0;
+    for (const Sexp& param : iterate(params, env)) {
+        auto v = eval(param, env).as_or_error<double>("Error: - cannot accept non-numerical parameters"sv);
 
-    double res = first_cons.car.as<double>();
-    for (const Sexp& param : iterate(first_cons.cdr, env)) {
-        res -= eval(param, env).as_or_error<double>("Error: - cannot accept non-numerical parameters"sv); 
+        if (param_cnt == 0)
+            res = v;
+        else
+            res -= v;
+
+        param_cnt += 1;
+    }
+
+    // Unary minus
+    if (param_cnt == 1) {
+        res = -res;
     }
 
     return Sexp(res);
@@ -31,19 +42,37 @@ Sexp builtin_sub(const Sexp& params, Environment& env) {
 Sexp builtin_mul(const Sexp& params, Environment& env) {
     double res = 1.0;
     for (const Sexp& param : iterate(params, env)) {
-        res *= eval(param, env).as_or_error<double>("Error: * cannot accept non-numerical parameters"sv); 
+        res *= eval(param, env).as_or_error<double>("Error: * cannot accept non-numerical parameters"sv);
     }
 
     return Sexp(res);
 }
 
 Sexp builtin_div(const Sexp& params, Environment& env) {
-    auto& first_cons = env.lookup(params.as<MemoryLocation>());
+    double res;
+    bool is_first = true;
+    for (const Sexp& param : iterate(params, env)) {
+        auto v = eval(param, env).as_or_error<double>("Error: / cannot accept non-numerical parameters"sv);
 
-    double res = first_cons.car.as<double>();
-    for (const Sexp& param : iterate(first_cons.cdr, env)) {
-        res /= eval(param, env).as_or_error<double>("Error: / cannot accept non-numerical parameters"sv); 
+        if (is_first) {
+            is_first = false;
+            res = v;
+        } else {
+            res /= v;
+        }
     }
+
+    return Sexp(res);
+}
+
+Sexp builtin_sqrt(const Sexp& params, Environment& env) {
+    using enum Sexp::Type;
+
+    const Sexp* p;
+    list_get_prefix(params, {&p}, nullptr, env);
+
+    double x = eval(*p, env).as_or_error<double>("Error: sqrt cannot accept non-numerical parameters"sv);
+    double res = std::sqrt(x);
 
     return Sexp(res);
 }
@@ -63,11 +92,31 @@ Sexp builtin_if(const Sexp& params, Environment& env) {
 }
 
 Sexp builtin_eq(const Sexp& params, Environment& env) {
-    const Sexp* a;
-    const Sexp* b;
-    list_get_prefix(params, {&a, &b}, nullptr, env);
+    const Sexp* a_lit;
+    const Sexp* b_lit;
+    list_get_prefix(params, {&a_lit, &b_lit}, nullptr, env);
 
-    return {}; // TODO
+    auto a = eval(*a_lit, env);
+    auto b = eval(*b_lit, env);
+
+    if (a.get_type() != b.get_type())
+        return Sexp(false);
+
+    switch (a.get_type()) {
+        using enum Sexp::Type;
+#define CASE(the_type) case the_type: return a.get<the_type>() == b.get<the_type>()
+        case TYPE_NIL: return true;
+        CASE(TYPE_NUM);
+        CASE(TYPE_BOOL);
+        CASE(TYPE_STRING);
+        case TYPE_SYMBOL: return a.get<TYPE_SYMBOL>().name == b.get<TYPE_SYMBOL>().name;
+        CASE(TYPE_REF);
+        CASE(TYPE_BUILTIN_PROC);
+        CASE(TYPE_USER_PROC);
+#undef CASE
+    }
+
+    std::unreachable();
 }
 
 template <typename Op>
@@ -142,10 +191,24 @@ Sexp builtin_define(const Sexp& params, Environment& env) {
             list_get_prefix(*declaration, {&decl_name}, &decl_params, env);
 
             if (decl_name->get_type() != TYPE_SYMBOL) throw "Error: proc name must be a symbol";
+            auto& proc_name = decl_name->as<Symbol>().name;
 
-            auto& name = decl_name->as<Symbol>().name;
-            
-            // TODO
+            std::vector<std::string> proc_args;
+            for (const Sexp& param : iterate(*decl_params, env)) {
+                if (param.get_type() != TYPE_SYMBOL) throw "Error: proc parameter must be a symbol";
+                proc_args.push_back(param.get<TYPE_SYMBOL>().name);
+            }
+
+            if (body->get_type() != TYPE_REF) throw "Error: proc body must have 1 or more forms";
+
+            env.user_proc_pool.push_back(UserProc{
+                .name = proc_name,
+                .arguments = std::move(proc_args),
+                .body = body->get<TYPE_REF>(),
+            });
+            env.scopes.back().bindings.insert_or_assign(
+                proc_name,
+                Sexp(env.user_proc_pool.back()));
         } break;
 
         default:
@@ -161,6 +224,7 @@ const std::map<std::string_view, BuiltinProc> BUILTINS{
     ITEM("-"sv, builtin_sub),
     ITEM("*"sv, builtin_mul),
     ITEM("/"sv, builtin_div),
+    ITEM("sqrt"sv, builtin_sqrt),
     ITEM("if"sv, builtin_if),
     ITEM("="sv, builtin_eq),
     ITEM("<"sv, builtin_binary_op<std::less<>>),
@@ -176,9 +240,42 @@ const std::map<std::string_view, BuiltinProc> BUILTINS{
 };
 #undef ITEM
 
+Sexp eval_user_proc(const UserProc& proc, const Sexp& params, Environment& env) {
+    using enum Sexp::Type;
+
+    env.push_scope();
+    DEFER { env.pop_scope(); };
+
+    auto it_decl = proc.arguments.begin();
+    auto it_value = SexpListIterator(params, env);
+    while (it_decl != proc.arguments.end() && !it_value.is_end()) {
+        auto& arg_name = *it_decl;
+        auto arg_value = eval(*it_value, env);
+        env.scopes.back().bindings.insert_or_assign(arg_name, std::move(arg_value));
+
+        ++it_decl;
+        ++it_value;
+    }
+
+    const ConsCell* curr = &env.lookup(proc.body);
+    while (true) {
+        bool has_next = curr->cdr.get_type() == TYPE_REF;
+
+        // Last form in proc body is returned
+        if (!has_next)
+            return eval(curr->car, env);
+
+        eval(curr->car, env);
+        curr = &env.lookup(curr->cdr.as<MemoryLocation>());
+    }
+
+    std::unreachable();
+}
+
 Sexp eval(const Sexp& sexp, Environment& env) {
     using enum Sexp::Type;
 
+    auto& curr_scope = env.scopes.back().bindings;
     switch (sexp.get_type()) {
         case TYPE_REF: {
             auto& cons_cell = env.lookup(sexp.as<MemoryLocation>());
@@ -188,22 +285,30 @@ Sexp eval(const Sexp& sexp, Environment& env) {
             if (sym.get_type() != TYPE_SYMBOL) throw "Invalid eval format";
             const auto& proc_name = sym.as<Symbol>().name;
 
+            if (auto user_proc = env.lookup_binding(proc_name);
+                user_proc && user_proc->get_type() == TYPE_USER_PROC)
+            {
+                return eval_user_proc(*user_proc->get<TYPE_USER_PROC>(), params, env);
+            }
             if (auto iter = BUILTINS.find(proc_name); iter != BUILTINS.end()) {
                 auto& builtin_proc = iter->second;
                 return builtin_proc.fn(params, env);
             }
+
+            throw "Error: proc not found";
         } break;
 
         case TYPE_SYMBOL: {
-            auto& curr_scope = env.scopes.back().bindings;
             auto& name = sexp.as<Symbol>().name;
-            
-            auto iter = curr_scope.find(name);
-            if (iter != curr_scope.end()) {
-                return iter->second;
-            } else {
-                throw "Error: undefined value";
+
+            if (auto binding = env.lookup_binding(name)) {
+                return *binding;
             }
+            if (auto iter = BUILTINS.find(name); iter != BUILTINS.end()) {
+                return Sexp(iter->second);
+            }
+
+            throw "Error: variable not bound";
         } break;
 
         // For literal x, (eval x) => x
