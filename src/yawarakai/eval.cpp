@@ -101,52 +101,68 @@ Sexp builtin_if(const Sexp& params, Environment& env) {
 }
 
 Sexp builtin_eq(const Sexp& params, Environment& env) {
-    const Sexp* a_lit;
-    const Sexp* b_lit;
-    list_get_everything(params, {&a_lit, &b_lit}, env);
+    bool is_first = true;
+    Sexp prev;
+    for (auto& param : iterate(params, env)) {
+        Sexp curr = eval(param, env);
 
-    auto a = eval(*a_lit, env);
-    auto b = eval(*b_lit, env);
+        if (is_first) {
+            is_first = false;
+            prev = std::move(curr);
+            continue;
+        }
 
-    if (a.get_type() != b.get_type())
-        return Sexp(false);
+        if (curr.get_type() != prev.get_type())
+            return Sexp(false);
 
-    switch (a.get_type()) {
-        using enum Sexp::Type;
-#define CASE(the_type) case the_type: return a.get<the_type>() == b.get<the_type>()
-        case TYPE_NIL: return true;
-        CASE(TYPE_NUM);
-        CASE(TYPE_BOOL);
-        CASE(TYPE_STRING);
-        case TYPE_SYMBOL: return a.get<TYPE_SYMBOL>().name == b.get<TYPE_SYMBOL>().name;
-        CASE(TYPE_REF);
-        CASE(TYPE_BUILTIN_PROC);
-        CASE(TYPE_USER_PROC);
+        bool eq = false;
+        switch (curr.get_type()) {
+            using enum Sexp::Type;
+#define CASE(the_type) case the_type: eq = curr.get<the_type>() == prev.get<the_type>(); break;
+            case TYPE_NIL:
+                // All nil's are equal
+                break;
+            CASE(TYPE_NUM);
+            CASE(TYPE_BOOL);
+            CASE(TYPE_STRING);
+            case TYPE_SYMBOL:
+                eq = curr.get<TYPE_SYMBOL>().name == prev.get<TYPE_SYMBOL>().name;
+                break;
+            CASE(TYPE_REF);
+            CASE(TYPE_BUILTIN_PROC);
+            CASE(TYPE_USER_PROC);
 #undef CASE
+        }
+        if (!eq)
+            return Sexp(false);
+
+        prev = std::move(curr);
     }
 
-    std::unreachable();
+    return Sexp(true);
 }
 
 template <typename Op>
 Sexp builtin_binary_op(const Sexp& params, Environment& env) {
-    using enum Sexp::Type;
+    bool is_first = true;
+    double prev;
+    Op op{};
+    for (auto& param : iterate(params, env)) {
+        auto v = eval(param, env);
+        if (!v.is<double>())
+            throw EvalException("parameters must be numerical"s);
 
-    const Sexp* a_lit;
-    const Sexp* b_lit;
-    list_get_everything(params, {&a_lit, &b_lit}, env);
-
-    auto a = eval(*a_lit, env);
-    auto b = eval(*b_lit, env);
-
-    if (a.get_type() == TYPE_NUM && b.get_type() == TYPE_NUM) {
-        auto res = Op{}(
-            a.as<double>(),
-            b.as<double>());
-        return Sexp(res);
-    } else {
-        throw EvalException("parameters must be numerical"s);
+        double curr = v.as<double>();
+        if (!is_first) {
+            bool success = op(prev, curr);
+            if (!success)
+                return Sexp(false);
+        }
+        is_first = false;
+        prev = curr;
     }
+
+    return Sexp(true);
 }
 
 Sexp builtin_car(const Sexp& params, Environment& env) { return car(eval(list_nth_elm(params, 0, env), env), env); }

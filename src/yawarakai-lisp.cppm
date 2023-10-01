@@ -52,6 +52,8 @@ struct Sexp {
 
     Type get_type() const { return static_cast<Type>(_value.index()); }
 
+    bool is_nil() const { return _value.index() == TYPE_NIL; }
+
     template <size_t N> auto get() { return *std::get_if<N>(&_value); }
     template <size_t N> auto get() const { return *std::get_if<N>(&_value); }
 
