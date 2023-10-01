@@ -9,11 +9,13 @@ import std;
 export namespace yawarakai {
 
 /******** Forward declarations ********/
-struct Sexp;
-struct ConsCell;
 struct UserProc;
 struct BuiltinProc;
 struct Environment;
+
+struct EvalException {
+    std::string msg;
+};
 
 using MemoryLocation = size_t;
 
@@ -61,18 +63,6 @@ struct Sexp {
 
     template <typename T>
     T& as() { return const_cast<T&>(const_cast<const Sexp*>(this)->as<T>()); }
-
-    template <typename T>
-    const T& as_or_error(std::string_view err_msg) const {
-        if (const T* ptr = std::get_if<T>(&_value)) {
-            return *ptr;
-        } else {
-            throw err_msg;
-        }
-    }
-
-    template <typename T>
-    T& as_or_error(std::string_view err_msg) { return const_cast<T&>(const_cast<const Sexp*>(this)->as_or_error<T>(err_msg)); }
 };
 
 Sexp operator ""_sym(const char* str, size_t len) {
@@ -154,6 +144,7 @@ const Sexp& cdr(const Sexp& the_cons, Environment& env);
 const Sexp& list_nth_elm(const Sexp& list, int idx, Environment& env);
 
 void list_get_prefix(const Sexp& list, std::initializer_list<const Sexp**> out_prefix, const Sexp** out_rest, Environment& env);
+void list_get_everything(const Sexp& list, std::initializer_list<const Sexp**> out, Environment& env);
 
 struct SexpListIterator {
     using Sentinel = CommonSentinel;

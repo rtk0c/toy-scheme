@@ -91,6 +91,14 @@ void list_get_prefix(const Sexp& list, std::initializer_list<const Sexp**> out_p
         *out_rest = curr;
 }
 
+void list_get_everything(const Sexp& list, std::initializer_list<const Sexp**> out, Environment& env) {
+    const Sexp* rest;
+    list_get_prefix(list, out, &rest, env);
+
+    if (rest == nullptr)
+        throw "Error: too many elements in list";
+}
+
 std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
     struct ParserStackFrame {
         std::vector<Sexp> children;

@@ -2,6 +2,7 @@ import std;
 import yawarakai;
 
 namespace fs = std::filesystem;
+namespace ywrk = yawarakai;
 using namespace std::literals;
 
 struct ProgramOptions {
@@ -59,14 +60,18 @@ int main(int argc, char** argv) {
     std::stringstream buffer;
     buffer << ifs.rdbuf();
 
-    yawarakai::Environment env;
-    auto sexps = yawarakai::parse_sexp(buffer.view(), env);
+    ywrk::Environment env;
+    auto sexps = ywrk::parse_sexp(buffer.view(), env);
     for (auto& sexp : sexps) {
         if (opts.parse_only) {
-            std::cout << yawarakai::dump_sexp(sexp, env) << '\n';
+            std::cout << ywrk::dump_sexp(sexp, env) << '\n';
         } else {
-            auto res = yawarakai::eval(sexp, env);
-            std::cout << yawarakai::dump_sexp(res, env) << '\n';
+            try {
+                auto res = ywrk::eval(sexp, env);
+                std::cout << ywrk::dump_sexp(res, env) << '\n';
+            } catch (const ywrk::EvalException& e) {
+                std::cerr << "Exception: " << e.msg << '\n';
+            }
         }
     }
 
