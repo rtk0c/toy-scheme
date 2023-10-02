@@ -20,5 +20,10 @@ my-list
         (sqrt (- (sq b)
                  (* 4 a c))))
      (* 2 a)))
-(calc 1 0 0)
+(calc 1 0 -1)
 (calc -12 3 4)
+
+;; => #PROC:my-add
+my-add
+;; => #PROC:calc
+calc

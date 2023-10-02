@@ -72,7 +72,7 @@ const Sexp& list_nth_elm(const Sexp& list, int idx, Environment& env) {
     }
 
     if (n_to_go != 0) {
-        throw "Index out of bounds";
+        throw EvalException("list_nth_elm(): index out of bounds"s);
     }
     return car(*curr, env);
 }
@@ -87,6 +87,8 @@ void list_get_prefix(const Sexp& list, std::initializer_list<const Sexp**> out_p
         if (++it == out_prefix.end())
             break;
     }
+    if (it != out_prefix.end())
+        throw EvalException("list_get_prefix(): too few elements in list"s);
     if (out_rest)
         *out_rest = curr;
 }
@@ -95,8 +97,8 @@ void list_get_everything(const Sexp& list, std::initializer_list<const Sexp**> o
     const Sexp* rest;
     list_get_prefix(list, out, &rest, env);
 
-    if (rest == nullptr)
-        throw "Error: too many elements in list";
+    if (!rest->is_nil())
+        throw EvalException("list_get_everything(): too many elements in list"s);
 }
 
 std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
@@ -156,7 +158,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
 
         if (src[cursor] == ')') {
             if (cs.size() == 1) {
-                throw "Error: unbalanced parenthesis";
+                throw ParseException("unbalanced parenthesis"s);
             }
 
             ParserStackFrame& curr = cs.back();
@@ -183,7 +185,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
             while (true) {
                 // Break conditions
                 if (cursor >= src.length())
-                    throw "Error: unexpected EOF while parsing string";
+                    throw ParseException("unexpected EOF while parsing string"s);
                 if (src[cursor] == '"')
                     break;
 
@@ -210,7 +212,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
                         case 'n': str.push_back('\n');
                         case '\\': str.push_back('\\');
                         default: {
-                            throw std::format("Invalid escaped char '{}'", esc);
+                            throw ParseException(std::format("invalid escaped char '{}'", esc));
                         } break;
                     }
 
@@ -231,7 +233,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
 
         if (src[cursor] == '#') {
             cursor += 1;
-            if (cursor >= src.length()) throw "Error: unexpected EOF while parsing #-symbols";
+            if (cursor >= src.length()) throw ParseException("unexpected EOF while parsing #-symbols"s);
 
             char next_c = src[cursor];
             cursor += 1;
@@ -240,7 +242,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
                 case 't': push_sexp_to_parent(Sexp(true)); continue;
                 case 'f': push_sexp_to_parent(Sexp(false)); continue;
                 case ':': break; // TODO keyword argument
-                default: throw "Error: invalid #-symbol";
+                default: throw ParseException("invalid #-symbol"s);
             }
         }
 
@@ -253,7 +255,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
                 cursor += rest - &src[cursor];
                 continue;
             } else if (ec == std::errc::result_out_of_range) {
-                throw "Error: number literal out of range"s;
+                throw ParseException("number literal out of range"s);
             } else if (ec == std::errc::invalid_argument) {
                 // Not a number
             }
@@ -308,7 +310,7 @@ void dump_sexp_impl(std::string& output, const Sexp& sexp, Environment& env) {
             if (res.ec == std::errc()) {
                 output += std::string_view(buf, res.ptr);
             } else {
-                throw "Error formatting number.";
+                throw std::runtime_error("failed to format number with std::to_chars()"s);
             }
         } break;
 

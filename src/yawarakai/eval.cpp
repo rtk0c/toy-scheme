@@ -21,7 +21,7 @@ Sexp builtin_add(const Sexp& params, Environment& env) {
 }
 
 Sexp builtin_sub(const Sexp& params, Environment& env) {
-    double res;
+    double res = 0.0;
     int param_cnt = 0;
     for (auto& param : iterate(params, env)) {
         auto v = eval(param, env);
@@ -56,7 +56,7 @@ Sexp builtin_mul(const Sexp& params, Environment& env) {
 }
 
 Sexp builtin_div(const Sexp& params, Environment& env) {
-    double res;
+    double res = 0.0;
     bool is_first = true;
     for (auto& param : iterate(params, env)) {
         auto v = eval(param, env);

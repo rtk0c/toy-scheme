@@ -54,22 +54,28 @@ ProgramOptions parse_args(int argc, char** argv) {
 }
 
 void run_buffer(std::string_view buffer, const ProgramOptions& opts, ywrk::Environment& env) {
-    auto sexps = ywrk::parse_sexp(buffer, env);
+    std::vector<ywrk::Sexp> sexps;
+    try {
+        sexps = ywrk::parse_sexp(buffer, env);
+    } catch (const ywrk::ParseException& e) {
+        std::cerr << "Parsing exception: " << e.msg << '\n';
+        return;
+    }
+
     for (auto& sexp : sexps) {
-        if (opts.parse_only) {
-            std::cout << ywrk::dump_sexp(sexp, env) << '\n';
-        } else {
-            try {
+        try {
+            if (opts.parse_only) {
+                std::cout << ywrk::dump_sexp(sexp, env) << '\n';
+            } else {
                 auto res = ywrk::eval(sexp, env);
                 std::cout << ywrk::dump_sexp(res, env) << '\n';
-            } catch (const ywrk::EvalException& e) {
-                std::cerr << "Exception: " << e.msg << '\n';
             }
+        } catch (const ywrk::EvalException& e) {
+            std::cerr << "Eval exception: " << e.msg << '\n';
+        } catch (const std::runtime_error& e) {
+            std::cerr << "Internal error: " << e.what() << '\n';
         }
     }
-}
-
-void do_task_file(const fs::path& input_file, const ProgramOptions& opts, ywrk::Environment& env) {
 }
 
 int main(int argc, char** argv) {

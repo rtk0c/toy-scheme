@@ -13,6 +13,10 @@ struct UserProc;
 struct BuiltinProc;
 struct Environment;
 
+struct ParseException {
+    std::string msg;
+};
+
 struct EvalException {
     std::string msg;
 };
