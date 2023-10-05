@@ -1,14 +1,17 @@
+module;
+#include "yawarakai/util.hpp"
+
 export module yawarakai:lisp;
 
+import :memory;
 import :util;
 
 import std;
 
-#include "yawarakai/util.hpp"
-
 export namespace yawarakai {
 
 /******** Forward declarations ********/
+struct ConsCell;
 struct UserProc;
 struct BuiltinProc;
 struct Environment;
@@ -21,7 +24,7 @@ struct EvalException {
     std::string msg;
 };
 
-using MemoryLocation = size_t;
+using MemoryLocation = ConsCell*;
 
 struct Nil {};
 struct Symbol {
@@ -77,6 +80,8 @@ Sexp operator ""_sym(const char* str, size_t len) {
 
 /// A heap allocated cons, with a car/left and cdr/right Sexp
 struct ConsCell {
+    static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_CONS_CELL;
+
     Sexp car;
     Sexp cdr;
 };
@@ -90,6 +95,8 @@ struct BuiltinProc {
 };
 
 struct UserProc {
+    static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_USER_PROC;
+
     std::string name;
     std::vector<std::string> arguments;
     MemoryLocation body;
@@ -100,7 +107,7 @@ struct LexcialScope {
 };
 
 struct Environment {
-    std::vector<ConsCell> storage;
+    Heap heap;
     std::deque<UserProc> user_proc_pool;
 
     /// A stack of scopes, added as we call into functions and popped as we exit

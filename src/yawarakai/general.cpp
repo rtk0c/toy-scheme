@@ -12,16 +12,16 @@ Environment::Environment() {
 }
 
 MemoryLocation Environment::push(ConsCell cons) {
-    storage.push_back(std::move(cons));
-    return storage.size() - 1;
+    auto [ptr, _] = heap.allocate<ConsCell>(std::move(cons));
+    return ptr;
 }
 
 const ConsCell& Environment::lookup(MemoryLocation addr) const {
-    return storage[addr];
+    return *addr;
 }
 
 ConsCell& Environment::lookup(MemoryLocation addr) {
-    return storage[addr];
+    return *addr;
 }
 
 const Sexp* Environment::lookup_binding(std::string_view name) const {

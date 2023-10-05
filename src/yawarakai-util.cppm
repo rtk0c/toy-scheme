@@ -1,3 +1,6 @@
+module;
+#include <cassert>
+
 export module yawarakai:util;
 
 import std;
@@ -45,5 +48,17 @@ struct Iterable {
     Iterator begin() const { return Iterator(std::move(payload)); }
     Sentinel end() const { return Sentinel(); }
 };
+
+template <std::integral T>
+bool is_power_of_two(T v) {
+    return v != 0 && (v & (v - 1)) == 0;
+}
+
+uintptr_t shift_down_and_align(uintptr_t start, size_t size, size_t alignment) {
+    assert(is_power_of_two(alignment));
+
+    auto res_unaligned = start - size;
+    return res_unaligned & ~(alignment - 1);
+}
 
 }

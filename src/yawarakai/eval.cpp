@@ -1,8 +1,9 @@
+module;
+#include "util.hpp"
+
 module yawarakai;
 
 import std;
-
-#include "util.hpp"
 
 using namespace std::literals;
 
