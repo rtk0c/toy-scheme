@@ -28,6 +28,7 @@ size_t ObjectHeader::get_size() const {
         using enum ObjectType;
         case TYPE_UNKNOWN: return _read_size();
         case TYPE_CONS_CELL: return sizeof(ConsCell);
+        case TYPE_CALL_FRAME: return sizeof(LexcialScope);
     }
     return 0;
 }
@@ -45,6 +46,7 @@ size_t ObjectHeader::get_alignment() const {
         using enum ObjectType;
         case TYPE_UNKNOWN: return _align;
         case TYPE_CONS_CELL: return alignof(ConsCell);
+        case TYPE_CALL_FRAME: return alignof(LexcialScope);
     }
     return 0;
 }

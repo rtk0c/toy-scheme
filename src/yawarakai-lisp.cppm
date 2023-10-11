@@ -103,6 +103,9 @@ struct UserProc {
 };
 
 struct LexcialScope {
+    static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_CALL_FRAME;
+
+    LexcialScope* prev;
     std::map<std::string, Sexp, std::less<>> bindings;
 };
 
@@ -111,8 +114,7 @@ struct Environment {
     std::deque<UserProc> user_proc_pool;
 
     /// A stack of scopes, added as we call into functions and popped as we exit
-    /// `scopes[0]` is always the global scope
-    std::vector<LexcialScope> scopes;
+    LexcialScope* curr_scope;
 
     // A collection of canonical symbols
     struct {
@@ -134,8 +136,8 @@ struct Environment {
     ConsCell& lookup(MemoryLocation addr);
 
     const Sexp* lookup_binding(std::string_view name) const;
-    void push_scope() { scopes.emplace_back(); }
-    void pop_scope() { scopes.pop_back(); }
+    void push_scope();
+    void pop_scope();
 };
 
 /// Constructs a ConsCell on heap, with car = a and cdr = b, and return a reference Sexp to it.

@@ -8,7 +8,8 @@ using namespace std::literals;
 namespace yawarakai {
 
 Environment::Environment() {
-    scopes.emplace_back();
+    auto [s, _] = heap.allocate<LexcialScope>();
+    curr_scope = s;
 }
 
 MemoryLocation Environment::push(ConsCell cons) {
@@ -25,14 +26,29 @@ ConsCell& Environment::lookup(MemoryLocation addr) {
 }
 
 const Sexp* Environment::lookup_binding(std::string_view name) const {
-    for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
-        auto& scope = *it;
-        auto iter = scope.bindings.find(name);
-        if (iter != scope.bindings.end()) {
+    LexcialScope* curr = curr_scope;
+    while (curr) {
+        auto iter = curr->bindings.find(name);
+        if (iter != curr->bindings.end()) {
             return &iter->second;
         }
+
+        curr = curr->prev;
     }
     return nullptr;
+}
+
+void Environment::push_scope() {
+    auto [new_scope, _] = heap.allocate<LexcialScope>();
+    auto old_scope = curr_scope;
+
+    new_scope->prev = old_scope;
+
+    curr_scope = new_scope;
+}
+
+void Environment::pop_scope() {
+    curr_scope = curr_scope->prev;
 }
 
 Sexp cons(Sexp a, Sexp b, Environment& env) {

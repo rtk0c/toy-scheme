@@ -10,11 +10,13 @@ namespace yawarakai {
 
 /******** Forward declarations ********/
 struct ConsCell;
+struct LexcialScope;
 
 export enum class ObjectType : uint16_t {
-    TYPE_UNKNOWN = 0,
-    TYPE_CONS_CELL = 1,
-    TYPE_USER_PROC = 2,
+    TYPE_UNKNOWN,
+    TYPE_CONS_CELL,
+    TYPE_USER_PROC,
+    TYPE_CALL_FRAME,
 };
 
 export struct ObjectHeader {
@@ -97,6 +99,9 @@ public:
                         break;
                     case TYPE_CONS_CELL:
                         visitor(reinterpret_cast<ConsCell*>(obj));
+                        break;
+                    case TYPE_CALL_FRAME:
+                        visitor(reinterpret_cast<LexcialScope*>(obj));
                         break;
                 }
             }

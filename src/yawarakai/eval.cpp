@@ -191,7 +191,7 @@ Sexp builtin_quote(const Sexp& params, Environment& env) {
 }
 
 Sexp builtin_define(const Sexp& params, Environment& env) {
-    auto& curr_scope = env.scopes.back().bindings;
+    auto& curr_scope = env.curr_scope->bindings;
 
     const Sexp* declaration;
     const Sexp* body;
@@ -235,7 +235,7 @@ Sexp builtin_define(const Sexp& params, Environment& env) {
                 .arguments = std::move(proc_args),
                 .body = body->get<TYPE_REF>(),
             });
-            env.scopes.back().bindings.insert_or_assign(
+            env.curr_scope->bindings.insert_or_assign(
                 proc_name,
                 Sexp(env.user_proc_pool.back()));
         } break;
@@ -280,7 +280,7 @@ Sexp eval_user_proc(const UserProc& proc, const Sexp& params, Environment& env) 
     while (it_decl != proc.arguments.end() && !it_value.is_end()) {
         auto& arg_name = *it_decl;
         auto arg_value = eval(*it_value, env);
-        env.scopes.back().bindings.insert_or_assign(arg_name, std::move(arg_value));
+        env.curr_scope->bindings.insert_or_assign(arg_name, std::move(arg_value));
 
         ++it_decl;
         ++it_value;
@@ -304,7 +304,7 @@ Sexp eval_user_proc(const UserProc& proc, const Sexp& params, Environment& env) 
 Sexp eval(const Sexp& sexp, Environment& env) {
     using enum Sexp::Type;
 
-    auto& curr_scope = env.scopes.back().bindings;
+    auto& curr_scope = env.curr_scope->bindings;
     switch (sexp.get_type()) {
         case TYPE_REF: {
             auto& cons_cell = env.lookup(sexp.as<MemoryLocation>());
