@@ -74,26 +74,29 @@ public:
         return { obj, header };
     }
 
+    std::byte* find_object(ObjectHeader* header) const;
+    ObjectHeader* find_header(std::byte* object) const;
+
     void walk_heap_objects(auto&& visitor) const {
         for (auto& hg : heap_segments) {
-            auto curr = std::bit_cast<uintptr_t>(hg.arena + hg.arena_size);
-            while (curr != hg.last_object) {
-                curr -= sizeof(ObjectHeader);
+            auto curr = std::bit_cast<uintptr_t>(hg.last_object);
+            auto end = std::bit_cast<uintptr_t>(hg.arena) + hg.arena_size;
+            while (curr < end) {
                 auto header = std::bit_cast<ObjectHeader*>(curr);
+                curr += sizeof(ObjectHeader);
                 size_t obj_size = header->get_size();
                 size_t obj_align = header->get_alignment();
 
-                auto obj_addr = shift_down_and_align(curr, obj_size, obj_align);
-                auto obj = std::bit_cast<std::byte*>(obj_addr);
-                curr = obj;
+                auto obj = std::bit_cast<std::byte*>(curr);
+                curr += obj_size;
 
                 switch (header->get_type()) {
                     using enum ObjectType;
                     case TYPE_UNKNOWN:
-                        visitor(std::span<std::byte>(obj_addr, obj_size));
+                        visitor(std::span<std::byte>(obj, obj_size));
                         break;
                     case TYPE_CONS_CELL:
-                        visitor(reinterpret_cast<ConsCell*>(obj_addr));
+                        visitor(reinterpret_cast<ConsCell*>(obj));
                         break;
                 }
             }

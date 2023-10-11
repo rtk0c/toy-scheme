@@ -78,13 +78,15 @@ Heap::~Heap() {
 }
 
 std::pair<std::byte*, ObjectHeader*> Heap::allocate(size_t size, size_t alignment) {
+    // TODO fix this...
+    assert(alignment == alignof(void*));
+
     auto& hg = heap_segments.back();
 
     auto start = std::bit_cast<uintptr_t>(hg.last_object);
+    uintptr_t raw = shift_down_and_align(start, size, alignment);
     // N.B. no need to align because ObjectHeader has alignment of 1
-    uintptr_t raw_header = start - sizeof(ObjectHeader);
-    uintptr_t raw = shift_down_and_align(raw_header, size, alignment);
-    //std::printf("header: %llx, obj: %llx\n", raw_header, raw);
+    uintptr_t raw_header = raw - sizeof(ObjectHeader);
 
     if (raw_header < std::bit_cast<uintptr_t>(hg.arena)) {
         // We ran out of space
@@ -94,7 +96,7 @@ std::pair<std::byte*, ObjectHeader*> Heap::allocate(size_t size, size_t alignmen
 
     auto new_obj_header = std::bit_cast<std::byte*>(raw_header);
     auto new_obj = std::bit_cast<std::byte*>(raw);
-    hg.last_object = new_obj;
+    hg.last_object = new_obj_header;
 
     // Padding members initialized to 0 automatically
     auto h = new(new_obj_header) ObjectHeader{};
@@ -103,6 +105,14 @@ std::pair<std::byte*, ObjectHeader*> Heap::allocate(size_t size, size_t alignmen
     h->set_type(ObjectType::TYPE_UNKNOWN);
 
     return { new_obj, h };
+}
+
+std::byte* Heap::find_object(ObjectHeader* header) const {
+    return reinterpret_cast<std::byte*>(header) + sizeof(ObjectHeader);
+}
+
+ObjectHeader* Heap::find_header(std::byte* object) const {
+    return reinterpret_cast<ObjectHeader*>(object - sizeof(ObjectHeader));
 }
 
 void Heap::new_heap_segment() {
