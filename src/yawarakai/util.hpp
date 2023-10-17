@@ -9,4 +9,5 @@
 #define CONCAT(a, b) CONCAT_IMPL(a, b)
 
 #define UNIQUE_NAME(prefix) CONCAT(prefix, __COUNTER__)
+#define DISCARD UNIQUE_NAME(_discard)
 #define DEFER ScopeGuard UNIQUE_NAME(_scope_guard) = [&]()

@@ -8,8 +8,9 @@ using namespace std::literals;
 namespace yawarakai {
 
 Environment::Environment() {
-    auto [s, _] = heap.allocate<LexcialScope>();
+    auto [s, _] = heap.allocate<CallFrame>();
     curr_scope = s;
+    global_scope = s;
 }
 
 MemoryLocation Environment::push(ConsCell cons) {
@@ -26,7 +27,7 @@ ConsCell& Environment::lookup(MemoryLocation addr) {
 }
 
 const Sexp* Environment::lookup_binding(std::string_view name) const {
-    LexcialScope* curr = curr_scope;
+    CallFrame* curr = curr_scope;
     while (curr) {
         auto iter = curr->bindings.find(name);
         if (iter != curr->bindings.end()) {
@@ -38,17 +39,17 @@ const Sexp* Environment::lookup_binding(std::string_view name) const {
     return nullptr;
 }
 
-void Environment::push_scope() {
-    auto [new_scope, _] = heap.allocate<LexcialScope>();
-    auto old_scope = curr_scope;
+void Environment::set_binding(std::string_view name, Sexp value) {
+    CallFrame* curr = curr_scope;
+    while (curr) {
+        auto iter = curr->bindings.find(name);
+        if (iter != curr->bindings.end()) {
+            iter->second = value;
+            return;
+        }
 
-    new_scope->prev = old_scope;
-
-    curr_scope = new_scope;
-}
-
-void Environment::pop_scope() {
-    curr_scope = curr_scope->prev;
+        curr = curr->prev;
+    }
 }
 
 Sexp cons(Sexp a, Sexp b, Environment& env) {
@@ -115,6 +116,28 @@ void list_get_everything(const Sexp& list, std::initializer_list<const Sexp**> o
 
     if (!rest->is_nil())
         throw EvalException("list_get_everything(): too many elements in list"s);
+}
+
+UserProc* make_user_proc(const Sexp& param_decl, const Sexp& body_decl, Environment& env) {
+    using enum Sexp::Type;
+
+    std::vector<std::string> proc_args;
+    for (const Sexp& param : iterate(param_decl, env)) {
+        if (param.get_type() != TYPE_SYMBOL)
+            throw EvalException("proc parameter must be a symbol"s);
+        proc_args.push_back(param.get<TYPE_SYMBOL>().name);
+    }
+
+    if (body_decl.get_type() != TYPE_REF)
+        throw EvalException("proc body must have 1 or more forms"s);
+
+    auto [proc, _] = env.heap.allocate<UserProc>(UserProc{
+        .closure_frame = env.curr_scope,
+        .arguments = std::move(proc_args),
+        .body = body_decl.get<TYPE_REF>(),
+    });
+    
+    return proc;
 }
 
 std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
@@ -367,8 +390,13 @@ void dump_sexp_impl(std::string& output, const Sexp& sexp, Environment& env) {
 
         case TYPE_USER_PROC: {
             auto& v = *sexp.get<TYPE_USER_PROC>();
-            output += "#PROC:";
-            output += v.name;
+            if (v.name.empty()) {
+                // Unnamed proc, probably a lambda
+                output += "#PROC";
+            } else {
+                output += "#PROC:";
+                output += v.name;
+            }
         } break;
     }
 }

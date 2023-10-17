@@ -220,24 +220,10 @@ Sexp builtin_define(const Sexp& params, Environment& env) {
                 throw EvalException("proc name must be a symbol"s);
             auto& proc_name = decl_name->as<Symbol>().name;
 
-            std::vector<std::string> proc_args;
-            for (const Sexp& param : iterate(*decl_params, env)) {
-                if (param.get_type() != TYPE_SYMBOL)
-                    throw EvalException("proc parameter must be a symbol"s);
-                proc_args.push_back(param.get<TYPE_SYMBOL>().name);
-            }
+            auto p = make_user_proc(*decl_params, *body, env);
+            p->name = proc_name;
 
-            if (body->get_type() != TYPE_REF)
-                throw EvalException("proc body must have 1 or more forms"s);
-
-            env.user_proc_pool.push_back(UserProc{
-                .name = proc_name,
-                .arguments = std::move(proc_args),
-                .body = body->get<TYPE_REF>(),
-            });
-            env.curr_scope->bindings.insert_or_assign(
-                proc_name,
-                Sexp(env.user_proc_pool.back()));
+            env.curr_scope->bindings.insert_or_assign(proc_name, Sexp(*p));
         } break;
 
         default:
@@ -245,6 +231,31 @@ Sexp builtin_define(const Sexp& params, Environment& env) {
     }
 
     return Sexp();
+}
+
+Sexp builtin_lambda(const Sexp& params, Environment& env) {
+    const Sexp* decl_params;
+    const Sexp* body;
+    list_get_prefix(params, {&decl_params}, &body, env);
+
+    auto p = make_user_proc(*decl_params, *body, env);
+
+    return Sexp(*p);
+}
+
+Sexp builtin_set(const Sexp& params, Environment& env) {
+    using enum Sexp::Type;
+
+    const Sexp* binding;
+    const Sexp* value;
+    list_get_prefix(params, {&binding, &value}, nullptr, env);
+
+    if (binding->get_type() != TYPE_SYMBOL)
+        throw EvalException("(set!) name must be a symbol"s);
+
+    env.set_binding(
+        binding->get<TYPE_SYMBOL>().name,
+        eval(*value, env));
 }
 
 #define ITEM(name, func) { name, BuiltinProc{ name, func } }
@@ -266,25 +277,31 @@ const std::map<std::string_view, BuiltinProc> BUILTINS{
     ITEM("null?"sv, builtin_is_null),
     ITEM("quote"sv, builtin_quote),
     ITEM("define"sv, builtin_define),
+    ITEM("lambda"sv, builtin_lambda),
+    ITEM("set!"sv, builtin_set),
 };
 #undef ITEM
 
 Sexp eval_user_proc(const UserProc& proc, const Sexp& params, Environment& env) {
     using enum Sexp::Type;
 
-    env.push_scope();
-    DEFER { env.pop_scope(); };
+    auto [s, DISCARD] = env.heap.allocate<CallFrame>();
+    s->prev = proc.closure_frame;
 
     auto it_decl = proc.arguments.begin();
     auto it_value = SexpListIterator(params, env);
     while (it_decl != proc.arguments.end() && !it_value.is_end()) {
         auto& arg_name = *it_decl;
+        // NOTE: we are still evaluating in the parent CallFrame, but merely storing the result in the current CallFrame
         auto arg_value = eval(*it_value, env);
-        env.curr_scope->bindings.insert_or_assign(arg_name, std::move(arg_value));
+        s->bindings.insert_or_assign(arg_name, std::move(arg_value));
 
         ++it_decl;
         ++it_value;
     }
+
+    ScopeGuard _ = CurrentValueRestorer(env.curr_scope);
+    env.curr_scope = s;
 
     const ConsCell* curr = &env.lookup(proc.body);
     while (true) {
@@ -304,7 +321,6 @@ Sexp eval_user_proc(const UserProc& proc, const Sexp& params, Environment& env) 
 Sexp eval(const Sexp& sexp, Environment& env) {
     using enum Sexp::Type;
 
-    auto& curr_scope = env.curr_scope->bindings;
     switch (sexp.get_type()) {
         case TYPE_REF: {
             auto& cons_cell = env.lookup(sexp.as<MemoryLocation>());
@@ -338,6 +354,7 @@ Sexp eval(const Sexp& sexp, Environment& env) {
                 return Sexp(iter->second);
             }
 
+            std::print("{}", name);
             throw EvalException("variable not bound"s);
         } break;
 

@@ -35,6 +35,15 @@ struct ScopeGuard {
     void cancel() { _canceled = true; }
 };
 
+template <typename T>
+struct CurrentValueRestorer {
+    T* _slot;
+    T _prev;
+
+    CurrentValueRestorer(T& slot) : _slot{ &slot }, _prev{ slot } {}
+    void operator()() { *_slot = std::move(_prev); }
+};
+
 // A general sentinel type
 struct CommonSentinel {};
 

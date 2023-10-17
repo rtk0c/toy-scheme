@@ -86,6 +86,14 @@ struct ConsCell {
     Sexp cdr;
 };
 
+struct CallFrame {
+    static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_CALL_FRAME;
+
+    /// The CallFrame in the "previous level" of closure
+    CallFrame* prev;
+    std::map<std::string, Sexp, std::less<>> bindings;
+};
+
 struct BuiltinProc {
     // NOTE: we don't bind parameters to names in a scope when evaluating builtin functions, instead just using the list directly
     using FnPtr = Sexp(*)(const Sexp&, Environment&);
@@ -97,24 +105,19 @@ struct BuiltinProc {
 struct UserProc {
     static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_USER_PROC;
 
+    CallFrame* closure_frame;
     std::string name;
     std::vector<std::string> arguments;
+    // NOTE: we could use Sexp here, but since the body is always a list, using MemoryLocation is just easier
     MemoryLocation body;
-};
-
-struct LexcialScope {
-    static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_CALL_FRAME;
-
-    LexcialScope* prev;
-    std::map<std::string, Sexp, std::less<>> bindings;
 };
 
 struct Environment {
     Heap heap;
-    std::deque<UserProc> user_proc_pool;
 
     /// A stack of scopes, added as we call into functions and popped as we exit
-    LexcialScope* curr_scope;
+    CallFrame* curr_scope;
+    CallFrame* global_scope;
 
     // A collection of canonical symbols
     struct {
@@ -136,8 +139,7 @@ struct Environment {
     ConsCell& lookup(MemoryLocation addr);
 
     const Sexp* lookup_binding(std::string_view name) const;
-    void push_scope();
-    void pop_scope();
+    void set_binding(std::string_view name, Sexp value);
 };
 
 /// Constructs a ConsCell on heap, with car = a and cdr = b, and return a reference Sexp to it.
@@ -160,6 +162,8 @@ const Sexp& list_nth_elm(const Sexp& list, int idx, Environment& env);
 
 void list_get_prefix(const Sexp& list, std::initializer_list<const Sexp**> out_prefix, const Sexp** out_rest, Environment& env);
 void list_get_everything(const Sexp& list, std::initializer_list<const Sexp**> out, Environment& env);
+
+UserProc* make_user_proc(const Sexp& param_decl, const Sexp& body_decl, Environment& env);
 
 struct SexpListIterator {
     using Sentinel = CommonSentinel;
