@@ -293,30 +293,37 @@ Sexp do_let_unnamed(const Sexp& binding_forms, const Sexp& body, Environment& en
 
 // (let proc-id ((id val-expr) ...) body ...)
 Sexp do_let_named(const Symbol& sym, const Sexp& binding_forms, const Sexp& body, Environment& env) {
+    using enum Sexp::Type;
+
     auto [scope, _] = env.heap.allocate<CallFrame>();
     scope->prev = env.curr_scope;
 
     DEFER_RESTORE_VALUE(env.curr_scope);
     env.curr_scope = scope;
 
-    // TODO this whole can can be optimized, avoiding copying id's and val-expr's
-    // Extract parameter ids and val-exprs separately
-    Sexp proc_ids;
-    Sexp proc_val_expr;
+    // Extract parameter ids, and bind val-exprs after evaluating them
+    std::vector<std::string> proc_args;
     for (auto& form : iterate(binding_forms, env)) {
         const Sexp* id;
         const Sexp* val_expr;
         list_get_prefix(form, {&id, &val_expr}, nullptr, env);
 
-        cons_inplace(*id, proc_ids, env);
-        cons_inplace(*val_expr, proc_val_expr, env);
+        if (id->get_type() != TYPE_SYMBOL)
+            throw EvalException("(let) id must be a symbol"s);
+        auto& id_name = id->get<TYPE_SYMBOL>().name;
+
+        proc_args.push_back(id_name);
+        scope->bindings.try_emplace(id_name, eval(*val_expr, env));
     }
 
-    auto proc = make_user_proc(proc_ids, body, env);
-
+    auto [proc, DISCARD] = env.heap.allocate<UserProc>(UserProc{
+        .closure_frame = env.curr_scope,
+        .arguments = std::move(proc_args),
+        .body = body.get<TYPE_REF>(),
+    });
     scope->bindings.try_emplace(sym.name, Sexp(*proc));
 
-    return eval_user_proc(*proc, proc_val_expr, env);
+    return eval_many(body.get<TYPE_REF>(), env);
 }
 
 Sexp do_let(const Sexp& params, Environment& env, bool prebind_scope) {

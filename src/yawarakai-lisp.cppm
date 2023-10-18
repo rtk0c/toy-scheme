@@ -124,12 +124,6 @@ struct Environment {
 
     // A collection of canonical symbols
     struct {
-        Sexp define = "define"_sym;
-        Sexp op_add = "+"_sym;
-        Sexp op_sub = "-"_sym;
-        Sexp op_mul = "*"_sym;
-        Sexp op_div = "/"_sym;
-        Sexp if_ = "if"_sym;
         Sexp quote = "quote"_sym;
         Sexp unquote = "unquote"_sym;
         Sexp quasiquote = "quasiquote"_sym;
