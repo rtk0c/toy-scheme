@@ -59,19 +59,22 @@ struct Sexp {
 
     Type get_type() const { return static_cast<Type>(_value.index()); }
 
-    bool is_nil() const { return _value.index() == TYPE_NIL; }
+    template <size_t N> auto&& get() { return *std::get_if<N>(&_value); }
+    template <size_t N> auto&& get() const { return *std::get_if<N>(&_value); }
 
-    template <size_t N> auto get() { return *std::get_if<N>(&_value); }
-    template <size_t N> auto get() const { return *std::get_if<N>(&_value); }
+    template <size_t N> auto&& get_if() { return std::get_if<N>(&_value); }
+    template <size_t N> auto&& get_if() const { return std::get_if<N>(&_value); }
+
+    template <typename T> T* get_if() { return std::get_if<T>(&_value); }
+    template <typename T> const T* get_if() const { return std::get_if<T>(&_value); }
+
+    bool is_nil() const { return _value.index() == TYPE_NIL; }
 
     template <typename T>
     bool is() const { return std::holds_alternative<T>(_value); }
 
-    template <typename T>
-    const T& as() const { return *std::get_if<T>(&_value); }
-
-    template <typename T>
-    T& as() { return const_cast<T&>(const_cast<const Sexp*>(this)->as<T>()); }
+    template <typename T> T& as() { return *std::get_if<T>(&_value); }
+    template <typename T> const T& as() const { return *std::get_if<T>(&_value); }
 };
 
 Sexp operator ""_sym(const char* str, size_t len) {
@@ -154,6 +157,16 @@ Sexp make_list_v(Environment& env, Ts&&... sexps) {
     return the_list;
 }
 
+template <typename TIter, typename TSentinel>
+Sexp make_list(TIter&& iter, TSentinel&& sentinel, Environment& env) {
+    // TODO use compact list optimization here
+    Sexp lst;
+    for (; iter != sentinel; ++iter) {
+        cons_inplace(*iter, lst, env);
+    }
+    return lst;
+}
+
 bool is_list(const ConsCell& cons);
 
 const Sexp& car(const Sexp& the_cons, Environment& env);
@@ -213,6 +226,13 @@ SexpListIterable iterate(const Sexp& s, Environment& env) { return { SexpListIte
 std::vector<Sexp> parse_sexp(std::string_view src, Environment& env);
 std::string dump_sexp(const Sexp& sexp, Environment& env);
 
+Sexp eval_user_proc(const UserProc& proc, const Sexp& params, Environment& env);
+
 Sexp eval(const Sexp& sexp, Environment& env);
+
+/// Basically (progn): evalute each element in `forms`, and return the result of the last one
+/// if `forms` is not a list, it is given to eval() to handle
+Sexp eval_maybe_many(const Sexp& forms, Environment& env);
+Sexp eval_many(MemoryLocation forms, Environment& env);
 
 }

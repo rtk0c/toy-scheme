@@ -10,4 +10,6 @@
 
 #define UNIQUE_NAME(prefix) CONCAT(prefix, __COUNTER__)
 #define DISCARD UNIQUE_NAME(_discard)
+
 #define DEFER ScopeGuard UNIQUE_NAME(_scope_guard) = [&]()
+#define DEFER_RESTORE_VALUE(v) ScopeGuard UNIQUE_NAME(_scope_guard){CurrentValueRestorer(v)};

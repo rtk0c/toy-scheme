@@ -9,6 +9,7 @@ using namespace std::literals;
 
 namespace yawarakai {
 
+namespace {
 Sexp builtin_add(const Sexp& params, Environment& env) {
     double res = 0.0;
     for (auto& param : iterate(params, env)) {
@@ -227,7 +228,7 @@ Sexp builtin_define(const Sexp& params, Environment& env) {
         } break;
 
         default:
-            throw EvalException("(define) name must be a symbol"s);
+            throw EvalException("(define) expected symbol or func-declaration as 1st element"s);
     }
 
     return Sexp();
@@ -251,11 +252,99 @@ Sexp builtin_set(const Sexp& params, Environment& env) {
     list_get_prefix(params, {&binding, &value}, nullptr, env);
 
     if (binding->get_type() != TYPE_SYMBOL)
-        throw EvalException("(set!) name must be a symbol"s);
+        throw EvalException("(set!) expected symbol as 1st argument"s);
 
     env.set_binding(
         binding->get<TYPE_SYMBOL>().name,
         eval(*value, env));
+
+    return Sexp();
+}
+
+// (let ((id val-expr) ...) body ...)
+// (let* ((id val-expr) ...) body ...)
+Sexp do_let_unnamed(const Sexp& binding_forms, const Sexp& body, Environment& env, bool prebind_scope) {
+    auto [scope, _] = env.heap.allocate<CallFrame>();
+    scope->prev = env.curr_scope;
+
+    DEFER_RESTORE_VALUE(env.curr_scope);
+    if (prebind_scope)
+        env.curr_scope = scope;
+
+    // Eval each let-binding-form
+    for (auto& form : iterate(binding_forms, env)) {
+        const Sexp* id;
+        const Sexp* val_expr;
+        list_get_prefix(form, {&id, &val_expr}, nullptr, env);
+
+        if (!id->is<Symbol>())
+            throw EvalException("(let) id must be a symbol");
+
+        scope->bindings.try_emplace(
+            id->as<Symbol>().name,
+            eval(*val_expr, env));
+    }
+
+    if (!prebind_scope)
+        env.curr_scope = scope;
+
+    return eval_many(body.as<MemoryLocation>(), env);
+}
+
+// (let proc-id ((id val-expr) ...) body ...)
+Sexp do_let_named(const Symbol& sym, const Sexp& binding_forms, const Sexp& body, Environment& env) {
+    auto [scope, _] = env.heap.allocate<CallFrame>();
+    scope->prev = env.curr_scope;
+
+    DEFER_RESTORE_VALUE(env.curr_scope);
+    env.curr_scope = scope;
+
+    // TODO this whole can can be optimized, avoiding copying id's and val-expr's
+    // Extract parameter ids and val-exprs separately
+    Sexp proc_ids;
+    Sexp proc_val_expr;
+    for (auto& form : iterate(binding_forms, env)) {
+        const Sexp* id;
+        const Sexp* val_expr;
+        list_get_prefix(form, {&id, &val_expr}, nullptr, env);
+
+        cons_inplace(*id, proc_ids, env);
+        cons_inplace(*val_expr, proc_val_expr, env);
+    }
+
+    auto proc = make_user_proc(proc_ids, body, env);
+
+    scope->bindings.try_emplace(sym.name, Sexp(*proc));
+
+    return eval_user_proc(*proc, proc_val_expr, env);
+}
+
+Sexp do_let(const Sexp& params, Environment& env, bool prebind_scope) {
+    const Sexp* arg_1st;
+    const Sexp* arg_rest;
+    list_get_prefix(params, {&arg_1st}, &arg_rest, env);
+
+    auto [scope, _] = env.heap.allocate<CallFrame>();
+    scope->prev = env.curr_scope;
+
+    if (auto* sym = arg_1st->get_if<Symbol>()) {
+        const Sexp* binding_forms;
+        const Sexp* body;
+        list_get_prefix(*arg_rest, {&binding_forms}, &body, env);
+
+        return do_let_named(*sym, *binding_forms, *body, env);
+    } else {
+        const Sexp* binding_forms = arg_1st;
+        const Sexp* body = arg_rest;
+        return do_let_unnamed(*binding_forms, *body, env, prebind_scope);
+    }
+}
+
+Sexp builtin_let_basic(const Sexp& params, Environment& env) { return do_let(params, env, false); }
+Sexp builtin_let_star(const Sexp& params, Environment& env) { return do_let(params, env, true); }
+
+Sexp builtin_progn(const Sexp& params, Environment& env) {
+    return eval_many(params.as<MemoryLocation>(), env);
 }
 
 #define ITEM(name, func) { name, BuiltinProc{ name, func } }
@@ -279,43 +368,39 @@ const std::map<std::string_view, BuiltinProc> BUILTINS{
     ITEM("define"sv, builtin_define),
     ITEM("lambda"sv, builtin_lambda),
     ITEM("set!"sv, builtin_set),
+    ITEM("let"sv, builtin_let_basic),
+    ITEM("let*"sv, builtin_let_star),
 };
 #undef ITEM
+} // namespace
 
 Sexp eval_user_proc(const UserProc& proc, const Sexp& params, Environment& env) {
     using enum Sexp::Type;
 
-    auto [s, DISCARD] = env.heap.allocate<CallFrame>();
+    auto [s, _] = env.heap.allocate<CallFrame>();
     s->prev = proc.closure_frame;
 
     auto it_decl = proc.arguments.begin();
     auto it_value = SexpListIterator(params, env);
+    int n_args = 0;
     while (it_decl != proc.arguments.end() && !it_value.is_end()) {
         auto& arg_name = *it_decl;
         // NOTE: we are still evaluating in the parent CallFrame, but merely storing the result in the current CallFrame
         auto arg_value = eval(*it_value, env);
-        s->bindings.insert_or_assign(arg_name, std::move(arg_value));
+        s->bindings.try_emplace(arg_name, std::move(arg_value));
 
         ++it_decl;
         ++it_value;
+        n_args += 1;
     }
 
-    ScopeGuard _ = CurrentValueRestorer(env.curr_scope);
+    if (it_decl != proc.arguments.end())
+        throw EvalException(std::format("too few arguments provided to proc, expected {} but found {}", proc.arguments.size(), n_args));
+
+    DEFER_RESTORE_VALUE(env.curr_scope);
     env.curr_scope = s;
 
-    const ConsCell* curr = &env.lookup(proc.body);
-    while (true) {
-        bool has_next = curr->cdr.get_type() == TYPE_REF;
-
-        // Last form in proc body is returned
-        if (!has_next)
-            return eval(curr->car, env);
-
-        eval(curr->car, env);
-        curr = &env.lookup(curr->cdr.as<MemoryLocation>());
-    }
-
-    std::unreachable();
+    return eval_many(proc.body, env);
 }
 
 Sexp eval(const Sexp& sexp, Environment& env) {
@@ -328,7 +413,7 @@ Sexp eval(const Sexp& sexp, Environment& env) {
             auto& params = cons_cell.cdr;
 
             if (sym.get_type() != TYPE_SYMBOL)
-                throw EvalException("Invalid eval format"s);
+                throw EvalException("(proc-call ...) form must begin with a symbol"s);
             const auto& proc_name = sym.as<Symbol>().name;
 
             if (auto user_proc = env.lookup_binding(proc_name);
@@ -341,7 +426,7 @@ Sexp eval(const Sexp& sexp, Environment& env) {
                 return builtin_proc.fn(params, env);
             }
 
-            throw EvalException("proc not found"s);
+            throw EvalException(std::format("proc '{}' not found", proc_name));
         } break;
 
         case TYPE_SYMBOL: {
@@ -354,13 +439,37 @@ Sexp eval(const Sexp& sexp, Environment& env) {
                 return Sexp(iter->second);
             }
 
-            std::print("{}", name);
-            throw EvalException("variable not bound"s);
+            throw EvalException(std::format("variable '{}' not bound", name));
         } break;
 
         // For literal x, (eval x) => x
         default: return sexp;
     }
+}
+
+Sexp eval_maybe_many(const Sexp& forms, Environment& env) {
+    if (!forms.is<MemoryLocation>())
+        return eval(forms, env);
+    else
+        return eval_many(forms.as<MemoryLocation>(), env);
+}
+
+Sexp eval_many(MemoryLocation forms, Environment& env) {
+    using enum Sexp::Type;
+
+    const ConsCell* curr = &env.lookup(forms);
+    while (true) {
+        bool has_next = curr->cdr.get_type() == TYPE_REF;
+
+        // Last form in proc body is returned
+        if (!has_next)
+            return eval(curr->car, env);
+
+        eval(curr->car, env);
+        curr = &env.lookup(curr->cdr.as<MemoryLocation>());
+    }
+
+    std::unreachable();
 }
 
 }
