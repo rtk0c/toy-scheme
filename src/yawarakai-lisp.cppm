@@ -31,6 +31,86 @@ struct Symbol {
     std::string name;
 };
 
+// All heap objects are 8-byte aligned
+constexpr uintptr_t SCVAL_FLAG_MASK = 0xffff'ffff'ffff'fff8;
+
+// 32 bit signed integer in the MSB
+constexpr unsigned int SCVAL_FLAG_INTEGER = 0b000;
+
+// 32 bit IEEE754 floating pointer number in the MSB
+constexpr unsigned int SCVAL_FLAG_FLOAT = 0b010;
+
+// Bi-state value
+constexpr unsigned int SCVAL_FLAG_BOOL = 0b100;
+constexpr uintptr_t SCVAL_FALSE = 0x0000'0000'0000'0000 | SCVAL_FLAG_BOOL;
+constexpr uintptr_t SCVAL_TRUE = 0x0000'0000'0000'0010 | SCVAL_FLAG_BOOL;
+
+// 32-bit unsigned integer in the MSB, storing the symbol ID
+constexpr unsigned int SCVAL_FLAG_SYMBOL = 0b110;
+
+// 64-bit pointer with the lowest 3 bits assumed to be 0 (aligned to 8 byte boundries)
+constexpr unsigned int SCVAL_FLAG_OBJECT = 0b001;
+// Empty list, special value for SCVAL_FLAG_OBJECT
+// All address bits are 0 and flag == SCVAL_FLAG_OBJECT
+constexpr uintptr_t SCVAL_NIL = 0x0000'0000'0000'0000 | SCVAL_FLAG_OBJECT;
+
+struct ScVal {
+    uintptr_t _value;
+
+    uint8_t get_flags() const { return _value & SCVAL_FLAG_MASK; }
+
+    bool is_int() const { return get_flags() == SCVAL_FLAG_INTEGER; }
+    int32_t as_int() const {
+        assert(is_int());
+        auto payload = static_cast<uint32_t>(_value >> 32);
+        return std::bit_cast<int32_t>(payload);
+    }
+    void set_int(int32_t v) {
+        auto payload = std::bit_cast<uint32_t>(v);
+        _value = (static_cast<uint64_t>(payload) << 32) | SCVAL_FLAG_INTEGER;
+    }
+
+    bool is_float() const { return get_flags() == SCVAL_FLAG_FLOAT; }
+    float as_float() const {
+        assert(is_float());
+        auto payload = static_cast<uint32_t>(_value >> 32)
+        return std::bit_cast<float>(payload);
+    }
+    void set_float(float v) {
+        auto payload = std::bit_cast<uint32_t>(v);
+        _value = (static_cast<uint64_t>(payload) << 32) | SCVAL_FLAG_FLOAT;
+    }
+
+    bool is_bool() const { return get_flags() == SCVAL_FLAG_BOOL; }
+    bool evalute_bool() const {
+        return is_bool() ? _value == SCVAL_TRUE : true;
+    }
+    void set_bool(bool v) {
+        _value = v ? SCVAL_TRUE : SCVAL_FALSE;
+    }
+
+    bool is_symbol() const { return get_flags() == SCVAL_FLAG_SYMBOL; }
+    uint32_t get_symbol_id() const {
+        assert(is_symbol());
+        return static_cast<uint32_t>(_value >> 32);
+    }
+    void set_symbol_id(uint32_t id) {
+        _value = (static_cast<uint64_t>(id) << 32) | SCVAL_FLAG_SYMBOL;
+    }
+
+    bool is_heap_ptr() const { return _value & 1 == 1; }
+    bool is_nil() const { return _value == SCVAL_NIL; }
+    void* as_heap_ptr() const {
+        assert(is_heap_ptr());
+        return std::bit_cast<void*>(_value & ~0b111);
+    }
+    void set_heap_ptr(void* v) const {
+        auto bits = std::bit_cast<uintptr_t>(v);
+        assert((bits & 0b111) == 0);
+        _value = bits | SCVAL_FLAG_OBJECT;
+    }
+};
+
 /// Handles both atoms and lists (as references to heap allocated ConsCell's)
 struct Sexp {
     // NOTE: keep types in std::variant and their corresponding TYPE_XXX indices in sync
@@ -57,7 +137,7 @@ struct Sexp {
     Sexp(const BuiltinProc& v) : _value{ &v } {}
     Sexp(const UserProc& v) : _value{ &v } {}
 
-    Type get_type() const { return static_cast<Type>(_value.index()); }
+    // TODO set
 
     template <size_t N> auto&& get() { return *std::get_if<N>(&_value); }
     template <size_t N> auto&& get() const { return *std::get_if<N>(&_value); }
