@@ -248,8 +248,8 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
                 if (src[i] == '\\') {
                     char esc = src[i + 1];
                     switch (esc) {
-                        case 'n': str.push_back('\n');
-                        case '\\': str.push_back('\\');
+                        case 'n': h_str->push_back('\n'); break;
+                        case '\\': h_str->push_back('\\'); break;
                         default: {
                             throw ParseException(std::format("invalid escaped char '{}'", esc));
                         } break;
