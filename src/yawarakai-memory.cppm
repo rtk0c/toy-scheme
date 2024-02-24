@@ -15,7 +15,9 @@ struct CallFrame;
 export enum class ObjectType : uint16_t {
     TYPE_UNKNOWN,
     TYPE_CONS_CELL,
+    TYPE_STRING,
     TYPE_USER_PROC,
+    TYPE_BUILTIN_PROC,
     TYPE_CALL_FRAME,
 };
 
@@ -55,6 +57,95 @@ struct HeapSegment {
     size_t arena_size;
 };
 
+export template <typename T>
+struct HeapPtr {
+    T* ptr;
+
+    // Allow implicit construction of null value
+    /*implicit*/ HeapPtr()
+        : ptr{ nullptr } {}
+
+    explicit HeapPtr(T* ptr)
+        : ptr{ ptr } {}
+
+    operator bool() const { return ptr != nullptr; }
+
+    // C++20: operator!= automatically generated
+    bool operator==(std::nullptr_t) const { return ptr == nullptr; }
+
+    T& operator*() const { return *ptr; }
+    T* operator->() const { return ptr; }
+
+    T* get() const { return ptr; }
+
+    ObjectHeader* get_header() const {
+        assert(ptr != nullptr);
+        return reinterpret_cast<ObjectHeader*>(reinterpret_cast<std::byte*>(ptr) - sizeof(ObjectHeader));
+    }
+
+    ObjectType get_type() const {
+        assert(ptr != nullptr);
+        return get_header()->get_type();
+    }
+};
+
+export template <>
+struct HeapPtr<void> {
+    void* ptr;
+
+    /*implicit*/ HeapPtr()
+        : ptr{ nullptr } {}
+
+    template <typename T>
+    explicit HeapPtr(T* ptr)
+        : ptr{ static_cast<void*>(ptr) } {}
+
+    template <typename T>
+    /*implicit*/ HeapPtr(HeapPtr<T> ptr)
+        : ptr{ static_cast<void*>(ptr.get()) } {}
+
+    operator bool() const { return ptr != nullptr; }
+
+    // C++20: operator!= automatically generated
+    bool operator==(std::nullptr_t) const { return ptr == nullptr; }
+
+    void* get() const { return ptr; }
+
+    template <typename T>
+    T* get_as() const {
+        if (ptr == nullptr)
+            return nullptr;
+        if (get_type() != T::HEAP_OBJECT_TYPE)
+            return nullptr;
+        return reinterpret_cast<T*>(ptr);
+    }
+
+    template <typename T>
+    T* get_as_unchecked() const {
+        return reinterpret_cast<T*>(ptr);
+    }
+
+    template <typename T>
+    HeapPtr<T> as() const {
+        return HeapPtr<T>(get_as<T>());
+    }
+
+    template <typename T>
+    HeapPtr<T> as_unchecked() const {
+        return HeapPtr<T>(get_as_unchecked<T>());
+    }
+
+    ObjectHeader* get_header() const {
+        assert(ptr != nullptr);
+        return reinterpret_cast<ObjectHeader*>(reinterpret_cast<std::byte*>(ptr) - sizeof(ObjectHeader));
+    }
+
+    ObjectType get_type() const {
+        assert(ptr != nullptr);
+        return get_header()->get_type();
+    }
+};
+
 export class Heap {
 private:
     std::vector<HeapSegment> heap_segments;
@@ -69,11 +160,17 @@ public:
     std::pair<T*, ObjectHeader*> allocate(TArgs&&... args) {
         auto [obj_raw, header] = allocate(sizeof(T), alignof(T));
 
-        auto obj = new(obj_raw) T(std::forward<TArgs>(args)...);
+        auto obj = new (obj_raw) T(std::forward<TArgs>(args)...);
 
         header->set_type(T::HEAP_OBJECT_TYPE);
 
         return { obj, header };
+    }
+
+    template <typename T>
+    std::pair<T*, ObjectHeader*> allocate_only() {
+        auto [obj_raw, header] = allocate(sizeof(T), alignof(T));
+        return { reinterpret_cast<T*>(obj_raw), header };
     }
 
     std::byte* find_object(ObjectHeader* header) const;
@@ -112,4 +209,4 @@ private:
     void new_heap_segment();
 };
 
-}
+} // namespace yawarakai

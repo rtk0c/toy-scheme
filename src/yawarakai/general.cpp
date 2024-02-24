@@ -1,3 +1,6 @@
+module;
+#include <cassert>
+
 // TODO this file should be of module `yawarakai:lisp`, but if we do that, nothing from the :lisp interface unit is available here -- xmake bug?
 module yawarakai;
 
@@ -13,75 +16,61 @@ Environment::Environment() {
     global_scope = s;
 }
 
-MemoryLocation Environment::push(ConsCell cons) {
-    auto [ptr, _] = heap.allocate<ConsCell>(std::move(cons));
-    return ptr;
-}
-
-const ConsCell& Environment::lookup(MemoryLocation addr) const {
-    return *addr;
-}
-
-ConsCell& Environment::lookup(MemoryLocation addr) {
-    return *addr;
-}
-
-const Sexp* Environment::lookup_binding(std::string_view name) const {
+const Sexp* Environment::lookup_binding(const Symbol& name) const {
     CallFrame* curr = curr_scope;
     while (curr) {
-        auto iter = curr->bindings.find(name);
+        auto iter = curr->bindings.find(&name);
         if (iter != curr->bindings.end()) {
             return &iter->second;
         }
 
-        curr = curr->prev;
+        curr = curr->prev.get();
     }
     return nullptr;
 }
 
-void Environment::set_binding(std::string_view name, Sexp value) {
+void Environment::set_binding(const Symbol& name, Sexp value) {
     CallFrame* curr = curr_scope;
     while (curr) {
-        auto iter = curr->bindings.find(name);
+        auto iter = curr->bindings.find(&name);
         if (iter != curr->bindings.end()) {
             iter->second = value;
             return;
         }
 
-        curr = curr->prev;
+        curr = curr->prev.get();
     }
 }
 
 Sexp cons(Sexp a, Sexp b, Environment& env) {
-    auto addr = env.push(ConsCell{ std::move(a), std::move(b) });
+    auto [addr, _] = env.heap.allocate<ConsCell>(std::move(a), std::move(b));
     return Sexp(addr);
 }
 
 void cons_inplace(Sexp a, Sexp& list, Environment& env) {
-    auto addr = env.push(ConsCell{ std::move(a), std::move(list) });
+    auto [addr, _] = env.heap.allocate<ConsCell>(std::move(a), std::move(list));
     list = Sexp(addr);
 }
 
-bool is_list(const ConsCell& cons) {
-    auto type = cons.cdr.get_type();
-    return type == Sexp::TYPE_NIL || type == Sexp::TYPE_REF;
+Sexp car(Sexp s) {
+    auto cons_cell = s.as_ptr<ConsCell>();
+    if (cons_cell == nullptr)
+        throw EvalException("car(): argument is not not a cons");
+    return cons_cell->car;
 }
 
-const Sexp& car(const Sexp& the_cons, Environment& env) {
-    auto ref = the_cons.as<MemoryLocation>();
-    return env.lookup(ref).car;
+Sexp cdr(Sexp s) {
+    auto cons_cell = s.as_ptr<ConsCell>();
+    if (cons_cell == nullptr)
+        throw EvalException("cdr(): argument is not not a cons");
+    return cons_cell->cdr;
 }
 
-const Sexp& cdr(const Sexp& the_cons, Environment& env) {
-    auto ref = the_cons.as<MemoryLocation>();
-    return env.lookup(ref).cdr;
-}
-
-const Sexp& list_nth_elm(const Sexp& list, int idx, Environment& env) {
-    const Sexp* curr = &list;
+Sexp list_nth_elm(Sexp list, int idx, Environment& env) {
+    Sexp* curr = &list;
     int n_to_go = idx + 1;
-    while (curr->get_type() == Sexp::TYPE_REF) {
-        auto& cons_cell = env.lookup(curr->as<MemoryLocation>());
+    while (curr->is_ptr()) {
+        auto& cons_cell = *curr->as_ptr<ConsCell>();
         n_to_go -= 1;
         if (n_to_go == 0)
             break;
@@ -91,15 +80,16 @@ const Sexp& list_nth_elm(const Sexp& list, int idx, Environment& env) {
     if (n_to_go != 0) {
         throw EvalException("list_nth_elm(): index out of bounds"s);
     }
-    return car(*curr, env);
+    // TODO replace this with car() ?
+    return curr->as_ptr<ConsCell>()->car;
 }
 
-void list_get_prefix(const Sexp& list, std::initializer_list<const Sexp**> out_prefix, const Sexp** out_rest, Environment& env) {
-    const Sexp* curr = &list;
+void list_get_prefix(Sexp list, std::initializer_list<Sexp*> out_prefix, Sexp* out_rest, Environment& env) {
+    Sexp* curr = &list;
     auto it = out_prefix.begin();
-    while (curr->get_type() == Sexp::TYPE_REF) {
-        auto& cons_cell = env.lookup(curr->as<MemoryLocation>());
-        **it = &cons_cell.car;
+    while (curr->is_ptr()) {
+        auto& cons_cell = *curr->as_ptr<ConsCell>();
+        **it = cons_cell.car;
         curr = &cons_cell.cdr;
         if (++it == out_prefix.end())
             break;
@@ -107,43 +97,46 @@ void list_get_prefix(const Sexp& list, std::initializer_list<const Sexp**> out_p
     if (it != out_prefix.end())
         throw EvalException("list_get_prefix(): too few elements in list"s);
     if (out_rest)
-        *out_rest = curr;
+        *out_rest = *curr;
 }
 
-void list_get_everything(const Sexp& list, std::initializer_list<const Sexp**> out, Environment& env) {
-    const Sexp* rest;
+void list_get_everything(Sexp list, std::initializer_list<Sexp*> out, Environment& env) {
+    Sexp rest;
     list_get_prefix(list, out, &rest, env);
 
-    if (!rest->is_nil())
+    if (!rest.is_nil())
         throw EvalException("list_get_everything(): too many elements in list"s);
 }
 
-UserProc* make_user_proc(const Sexp& param_decl, const Sexp& body_decl, Environment& env) {
-    using enum Sexp::Type;
-
-    std::vector<std::string> proc_args;
-    for (const Sexp& param : iterate(param_decl, env)) {
-        if (param.get_type() != TYPE_SYMBOL)
+UserProc* make_user_proc(Sexp param_decl, Sexp body_decl, Environment& env) {
+    std::vector<const Symbol*> proc_args;
+    for (Sexp param : iterate(param_decl, env)) {
+        if (!param.is_symbol())
             throw EvalException("proc parameter must be a symbol"s);
-        proc_args.push_back(param.get<TYPE_SYMBOL>().name);
+        proc_args.push_back(&param.as_symbol());
     }
 
-    if (body_decl.get_type() != TYPE_REF)
+    if (!is_list(body_decl))
         throw EvalException("proc body must have 1 or more forms"s);
 
-    auto [proc, _] = env.heap.allocate<UserProc>(UserProc{
-        .closure_frame = env.curr_scope,
+    auto [proc, _] = env.heap.allocate_only<UserProc>();
+    new (proc) UserProc{
+        .closure_frame = HeapPtr(env.curr_scope),
         .arguments = std::move(proc_args),
-        .body = body_decl.get<TYPE_REF>(),
-    });
-    
+        .body = body_decl.as_ptr<ConsCell>(),
+    };
+
     return proc;
 }
 
 std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
+    auto sym_quote = Sexp(env.sym_pool.intern("quote"));
+    auto sym_unquote = Sexp(env.sym_pool.intern("unquote"));
+    auto sym_quasiquote = Sexp(env.sym_pool.intern("quasiquote"));
+
     struct ParserStackFrame {
         std::vector<Sexp> children;
-        const Sexp* wrapper = nullptr;
+        const Sexp* wrapper = {};
     };
     std::vector<ParserStackFrame> cs;
 
@@ -176,14 +169,20 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
             continue;
         }
 
-#define CHECK_FOR_WRAP(literal, sym) if (src[cursor] == literal) { next_sexp_wrapper = &sym; cursor++; continue; }
-        CHECK_FOR_WRAP('\'', env.sym.quote);
-        CHECK_FOR_WRAP(',', env.sym.unquote);
-        CHECK_FOR_WRAP('`', env.sym.quasiquote);
+#define CHECK_FOR_WRAP(literal, sym) \
+    if (src[cursor] == literal) {    \
+        next_sexp_wrapper = &sym;    \
+        cursor++;                    \
+        continue;                    \
+    }
+        CHECK_FOR_WRAP('\'', sym_quote);
+        CHECK_FOR_WRAP(',', sym_unquote);
+        CHECK_FOR_WRAP('`', sym_quasiquote);
 #undef CHECK_FOR_WRAP
 
         if (src[cursor] == '(') {
-            ParserStackFrame psf;;
+            ParserStackFrame psf;
+            ;
             if (next_sexp_wrapper) {
                 psf.wrapper = next_sexp_wrapper;
                 next_sexp_wrapper = nullptr;
@@ -240,7 +239,8 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
             }
             cursor += 1;
 
-            std::string str;
+            auto [h_str, _] = env.heap.allocate<String>();
+            auto& str = h_str->v;
             str.reserve(str_size);
 
             size_t i = str_begin;
@@ -248,8 +248,12 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
                 if (src[i] == '\\') {
                     char esc = src[i + 1];
                     switch (esc) {
-                        case 'n': h_str->push_back('\n'); break;
-                        case '\\': h_str->push_back('\\'); break;
+                        case 'n':
+                            str.push_back('\n');
+                            break;
+                        case '\\':
+                            str.push_back('\\');
+                            break;
                         default: {
                             throw ParseException(std::format("invalid escaped char '{}'", esc));
                         } break;
@@ -263,9 +267,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
                 i += 1;
             }
 
-            push_sexp_to_parent(
-                Sexp(std::move(str))
-            );
+            push_sexp_to_parent(Sexp(h_str));
 
             continue;
         }
@@ -278,18 +280,26 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
             cursor += 1;
 
             switch (next_c) {
-                case 't': push_sexp_to_parent(Sexp(true)); continue;
-                case 'f': push_sexp_to_parent(Sexp(false)); continue;
+                case 't':
+                    push_sexp_to_parent(Sexp(true));
+                    continue;
+                case 'f':
+                    push_sexp_to_parent(Sexp(false));
+                    continue;
                 case ':': break; // TODO keyword argument
                 default: throw ParseException("invalid #-symbol"s);
             }
         }
 
         {
-            double v;
+            float v;
             auto [rest, ec] = std::from_chars(&src[cursor], &*src.end(), v);
             if (ec == std::errc()) {
-                push_sexp_to_parent(Sexp(v));
+                // TODO proper Scheme numeric literal parsing
+                if (auto n = static_cast<int32_t>(v); n == v)
+                    push_sexp_to_parent(Sexp(n));
+                else
+                    push_sexp_to_parent(Sexp(v));
 
                 cursor += rest - &src[cursor];
                 continue;
@@ -301,8 +311,8 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
         }
 
         {
-            size_t symbol_size = 0;
-            size_t symbol_begin = cursor;
+            size_t sym_size = 0;
+            size_t sym_begin = cursor;
 
             while (true) {
                 if (cursor >= src.length())
@@ -311,7 +321,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
                 if (std::isspace(c) || c == '(' || c == ')')
                     break;
 
-                symbol_size += 1;
+                sym_size += 1;
                 cursor += 1;
             }
 
@@ -319,9 +329,8 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
             if (std::isspace(next_c))
                 cursor += 1;
 
-            push_sexp_to_parent(
-                Sexp(Symbol(std::string(&src[symbol_begin], symbol_size)))
-            );
+            const Symbol& h_sym = env.sym_pool.intern(&src[sym_begin], sym_size);
+            push_sexp_to_parent(Sexp(h_sym));
         }
     }
 
@@ -329,82 +338,95 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
     return std::move(cs[0].children);
 }
 
-void dump_sexp_impl(std::string& output, const Sexp& sexp, Environment& env) {
-    switch (sexp.get_type()) {
-        using enum Sexp::Type;
+template <typename T>
+void dump_numerical_value(std::string& output, T v) {
+    // TODO I have no idea why max_digits10 isn't big enough
+    // constexpr auto BUF_SIZE = std::numeric_limits<T>::max_digits10;
+    const auto BUF_SIZE = 32;
+    char buf[BUF_SIZE];
+    auto res = std::to_chars(buf, buf + BUF_SIZE, v);
 
-        case TYPE_NIL: {
-            output += "()";
+    if (res.ec == std::errc()) {
+        output += std::string_view(buf, res.ptr);
+    } else {
+        throw std::runtime_error("failed to format number with std::to_chars()"s);
+    }
+}
+
+void dump_sexp_impl(std::string& output, Sexp sexp, Environment& env) {
+    switch (sexp.get_flags()) {
+        case SCVAL_FLAG_INT: {
+            dump_numerical_value(output, sexp.as_int());
         } break;
 
-        case TYPE_NUM: {
-            auto v = sexp.as<double>();
-
-            // TODO I have no idea why max_digits10 isn't big enough
-            //constexpr auto BUF_SIZE = std::numeric_limits<double>::max_digits10;
-            const auto BUF_SIZE = 32;
-            char buf[BUF_SIZE];
-            auto res = std::to_chars(buf, buf + BUF_SIZE, v);
-
-            if (res.ec == std::errc()) {
-                output += std::string_view(buf, res.ptr);
-            } else {
-                throw std::runtime_error("failed to format number with std::to_chars()"s);
-            }
+        case SCVAL_FLAG_FLOAT: {
+            dump_numerical_value(output, sexp.as_float());
         } break;
 
-        case TYPE_BOOL: {
-            auto v = sexp.as<bool>();
+        case SCVAL_FLAG_BOOL: {
+            auto v = sexp.as_bool();
             output += v ? "#t" : "#f";
         } break;
 
-        case TYPE_STRING: {
-            auto& v = sexp.as<std::string>();
-
-            output += '"';
+        case SCVAL_FLAG_SYMBOL: {
+            auto& v = sexp.as_symbol();
             output += v;
-            output += '"';
         } break;
 
-        case TYPE_SYMBOL: {
-            auto& v = sexp.as<Symbol>();
+        case SCVAL_FLAG_PTR: {
+            HeapPtr<void> ptr = sexp.as_ptr();
+            switch (ptr.get_type()) {
+                using enum ObjectType;
 
-            output += v.name;
-        } break;
+                case TYPE_UNKNOWN: {
+                } break;
 
-        case TYPE_REF: {
-            output += "(";
-            for (const Sexp& elm : iterate(sexp, env)) {
-                dump_sexp_impl(output, elm, env);
-                output += " ";
-            }
-            output.pop_back(); // Remove the trailing space
-            output += ")";
-        } break;
+                case TYPE_CONS_CELL: {
+                    output += "(";
+                    for (Sexp elm : iterate(ptr.get_as_unchecked<ConsCell>(), env)) {
+                        dump_sexp_impl(output, elm, env);
+                        output += " ";
+                    }
+                    output.pop_back(); // Remove the trailing space
+                    output += ")";
+                } break;
 
-        case TYPE_BUILTIN_PROC: {
-            auto& v = *sexp.get<TYPE_BUILTIN_PROC>();
-            output += "#BUILTIN:";
-            output += v.name;
-        } break;
+                case TYPE_STRING: {
+                    auto& v = ptr.get_as_unchecked<String>()->v;
+                    output += '"';
+                    output += v;
+                    output += '"';
+                } break;
 
-        case TYPE_USER_PROC: {
-            auto& v = *sexp.get<TYPE_USER_PROC>();
-            if (v.name.empty()) {
-                // Unnamed proc, probably a lambda
-                output += "#PROC";
-            } else {
-                output += "#PROC:";
-                output += v.name;
+                case TYPE_USER_PROC: {
+                    auto& v = *ptr.get_as_unchecked<UserProc>();
+                    output += "#BUILTIN:";
+                    output += *v.name;
+                } break;
+
+                case TYPE_BUILTIN_PROC: {
+                    auto& v = *ptr.get_as_unchecked<BuiltinProc>();
+                    if (v.name->empty()) {
+                        // Unnamed proc, probably a lambda
+                        output += "#PROC";
+                    } else {
+                        output += "#PROC:";
+                        output += *v.name;
+                    }
+                } break;
+
+                case TYPE_CALL_FRAME: {
+                    assert(false && "unimplemented");
+                } break;
             }
         } break;
     }
 }
 
-std::string dump_sexp(const Sexp& sexp, Environment& env) {
+std::string dump_sexp(Sexp sexp, Environment& env) {
     std::string result;
     dump_sexp_impl(result, sexp, env);
     return result;
 }
 
-}
+} // namespace yawarakai

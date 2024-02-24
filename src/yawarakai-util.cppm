@@ -7,6 +7,13 @@ import std;
 
 export namespace yawarakai {
 
+struct StringHash {
+    using is_transparent = void;
+    size_t operator()(const std::string& s) const { return std::hash<std::string>{}(s); }
+    size_t operator()(std::string_view s) const { return std::hash<std::string_view>{}(s); }
+    size_t operator()(const char* s) const { return std::hash<std::string_view>{}(s); }
+};
+
 // https://stackoverflow.com/a/52393977
 
 template <typename T, typename... Args>
@@ -25,7 +32,9 @@ struct ScopeGuard {
     TFunction _func;
     bool _canceled = false;
 
-    ScopeGuard(TFunction&& f) : _func{ std::forward<TFunction>(f) } {}
+    ScopeGuard(TFunction&& f)
+        : _func{ std::forward<TFunction>(f) } {}
+
     ~ScopeGuard() {
         if (!_canceled) {
             _func();
@@ -40,7 +49,9 @@ struct CurrentValueRestorer {
     T* _slot;
     T _prev;
 
-    CurrentValueRestorer(T& slot) : _slot{ &slot }, _prev{ slot } {}
+    CurrentValueRestorer(T& slot)
+        : _slot{ &slot }, _prev{ slot } {}
+
     void operator()() { *_slot = std::move(_prev); }
 };
 
@@ -70,4 +81,4 @@ uintptr_t shift_down_and_align(uintptr_t start, size_t size, size_t alignment) {
     return res_unaligned & ~(alignment - 1);
 }
 
-}
+} // namespace yawarakai
