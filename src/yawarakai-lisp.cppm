@@ -364,8 +364,9 @@ void list_get_everything(Sexp list, std::initializer_list<Sexp*> out, Environmen
 
 UserProc* make_user_proc(Sexp param_decl, Sexp body_decl, Environment& env);
 
+struct SexpListSentinel {};
 struct SexpListIterator {
-    using Sentinel = CommonSentinel;
+    using Sentinel = SexpListSentinel;
 
     ConsCell* curr;
     Environment* env;
@@ -394,7 +395,7 @@ struct SexpListIterator {
         return *this;
     }
 
-    bool operator==(CommonSentinel) const {
+    bool operator==(SexpListSentinel) const {
         return curr == nullptr;
     }
 
@@ -402,7 +403,6 @@ struct SexpListIterator {
         return curr == nullptr;
     }
 };
-
 using SexpListIterable = Iterable<SexpListIterator, SexpListIterator>;
 
 SexpListIterable iterate(ConsCell* cons, Environment& env) {

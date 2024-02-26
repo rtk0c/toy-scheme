@@ -55,9 +55,6 @@ struct CurrentValueRestorer {
     void operator()() { *_slot = std::move(_prev); }
 };
 
-// A general sentinel type
-struct CommonSentinel {};
-
 template <typename TPayload, typename TIter>
 struct Iterable {
     using Iterator = TIter;
