@@ -2,7 +2,6 @@ module;
 #include <cassert>
 
 export module yawarakai:util;
-
 import std;
 
 export namespace yawarakai {

@@ -2,7 +2,6 @@ module;
 #include "util.hpp"
 
 module yawarakai;
-
 import std;
 
 using namespace std::literals;
@@ -269,7 +268,7 @@ Sexp builtin_set(Sexp params, Environment& env) {
 // (let ((id val-expr) ...) body ...)
 // (let* ((id val-expr) ...) body ...)
 Sexp do_let_unnamed(Sexp binding_forms, Sexp body, Environment& env, bool prebind_scope) {
-    auto [scope, _] = env.heap.allocate<CallFrame>();
+    auto [scope, _] = env.heap.allocate<Scope>();
     scope->prev = HeapPtr(env.curr_scope);
 
     DEFER_RESTORE_VALUE(env.curr_scope);
@@ -297,7 +296,7 @@ Sexp do_let_unnamed(Sexp binding_forms, Sexp body, Environment& env, bool prebin
 
 // (let proc-id ((id val-expr) ...) body ...)
 Sexp do_let_named(const Symbol& proc_name, Sexp binding_forms, Sexp body, Environment& env) {
-    auto [scope, _] = env.heap.allocate<CallFrame>();
+    auto [scope, _] = env.heap.allocate<Scope>();
     scope->prev = HeapPtr(env.curr_scope);
 
     DEFER_RESTORE_VALUE(env.curr_scope);
@@ -334,7 +333,7 @@ Sexp do_let(Sexp params, Environment& env, bool prebind_scope) {
     Sexp arg_rest;
     list_get_prefix(params, { &arg_1st }, &arg_rest, env);
 
-    auto [scope, _] = env.heap.allocate<CallFrame>();
+    auto [scope, _] = env.heap.allocate<Scope>();
     scope->prev = HeapPtr(env.curr_scope);
 
     if (arg_1st.is_symbol()) {
@@ -363,7 +362,7 @@ Sexp builtin_progn(Sexp params, Environment& env) {
 } // namespace
 
 Sexp call_user_proc(const UserProc& proc, Sexp params, Environment& env) {
-    auto [s, _] = env.heap.allocate<CallFrame>();
+    auto [s, _] = env.heap.allocate<Scope>();
     s->prev = proc.closure_frame;
 
     auto it_decl = proc.arguments.begin();

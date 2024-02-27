@@ -10,7 +10,7 @@ namespace yawarakai {
 
 /******** Forward declarations ********/
 struct ConsCell;
-struct CallFrame;
+struct Scope;
 
 export enum class ObjectType : uint16_t {
     TYPE_UNKNOWN,
@@ -196,7 +196,7 @@ public:
                         visitor(reinterpret_cast<ConsCell*>(obj));
                         break;
                     case TYPE_CALL_FRAME:
-                        visitor(reinterpret_cast<CallFrame*>(obj));
+                        visitor(reinterpret_cast<Scope*>(obj));
                         break;
                 }
             }

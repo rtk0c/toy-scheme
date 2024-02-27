@@ -3,34 +3,29 @@ module;
 #include <cassert>
 
 export module yawarakai:lisp;
-
 import :memory;
 import :util;
-
 import std;
 
-export namespace yawarakai {
-
-/******** Forward declarations ********/
-struct ConsCell;
-struct UserProc;
-struct BuiltinProc;
-struct Environment;
-struct Symbol;
-struct SymbolPool;
-
-struct ParseException {
+namespace yawarakai {
+export struct ParseException {
     std::string msg;
 };
 
-struct EvalException {
+export struct EvalException {
     std::string msg;
 };
 
-struct Symbol {
+export class SymbolPool;
+export class Symbol {
+private:
+    friend class SymbolPool;
+
     uintptr_t _data = 0;
     size_t _size = 0;
 
+public:
+    /// Constructs an empty symbol
     Symbol() = default;
 
     Symbol(const Symbol&) = delete;
@@ -66,32 +61,32 @@ struct Symbol {
     operator std::string_view() const { return { data(), size() }; }
 
     bool empty() const { return _size == 0; }
-
-private:
-    friend struct SymbolPool;
-    // Constructor for string literals
-    Symbol(const char* str, size_t len)
-        : _data{ std::bit_cast<uintptr_t>(str) | 0x1 } // Set lowest bit, indicating this is a literal
-        , _size{ len } //
-    {
-        // Sanity check: the pointer is not using the lowest bit
-        assert((std::bit_cast<uintptr_t>(str) & 0x1) == 0);
-    }
 };
 
-struct SymbolPool {
+export class SymbolPool {
+private:
     // TODO custom hashtable
     std::unordered_map<std::string, Symbol, StringHash, std::equal_to<>> _pool;
 
+public:
     // Constructor for string literals
     // This *technically* also accepts things like `const char arr[5];` - just don't do it
     template <size_t N>
     const Symbol& intern(const char (&str)[N]) {
         // Length of the char array from a literal contains the null terminator
-        auto& sym = _pool[std::string(str, N - 1)];
+        size_t actual_len = N - 1;
+        auto& sym = _pool[std::string(str, actual_len)];
         // If this Symbol is default constructed, i.e. this is a new entry in the symbol pool
         if (sym.data() == nullptr) {
-            sym = Symbol(str, N - 1);
+            // `str` is of type const char[N], we need a pointer for std::bit_cast
+            const char* str_ptr = str;
+
+            // Sanity check: the pointer is not using the lowest bit
+            assert((std::bit_cast<uintptr_t>(str_ptr) & 0x1) == 0);
+
+            // Set lowest bit, indicating this is a literal
+            sym._data = std::bit_cast<uintptr_t>(str_ptr) | 0x1;
+            sym._size = actual_len;
         }
         return sym;
     }
@@ -120,29 +115,29 @@ struct SymbolPool {
 };
 
 // All heap objects are 8-byte aligned
-constexpr uintptr_t SCVAL_MASK_FLAG = 0x0000'0000'0000'0007;
+export constexpr uintptr_t SCVAL_MASK_FLAG = 0x0000'0000'0000'0007;
 
 // 32 bit signed integer in the MSB
-constexpr unsigned int SCVAL_FLAG_INT = 0b000;
+export constexpr unsigned int SCVAL_FLAG_INT = 0b000;
 
 // 32 bit IEEE754 floating pointer number in the MSB
-constexpr unsigned int SCVAL_FLAG_FLOAT = 0b010;
+export constexpr unsigned int SCVAL_FLAG_FLOAT = 0b010;
 
 // Bi-state value
-constexpr unsigned int SCVAL_FLAG_BOOL = 0b100;
-constexpr uintptr_t SCVAL_FALSE = 0x0000'0000'0000'0000 | SCVAL_FLAG_BOOL;
-constexpr uintptr_t SCVAL_TRUE = 0x0000'0000'0000'0010 | SCVAL_FLAG_BOOL;
+export constexpr unsigned int SCVAL_FLAG_BOOL = 0b100;
+export constexpr uintptr_t SCVAL_FALSE = 0x0000'0000'0000'0000 | SCVAL_FLAG_BOOL;
+export constexpr uintptr_t SCVAL_TRUE = 0x0000'0000'0000'0010 | SCVAL_FLAG_BOOL;
 
 // 32-bit unsigned integer in the MSB, storing the symbol ID
-constexpr unsigned int SCVAL_FLAG_SYMBOL = 0b110;
+export constexpr unsigned int SCVAL_FLAG_SYMBOL = 0b110;
 
 // 64-bit pointer with the lowest 3 bits assumed to be 0 (aligned to 8 byte boundries)
-constexpr unsigned int SCVAL_FLAG_PTR = 0b001;
+export constexpr unsigned int SCVAL_FLAG_PTR = 0b001;
 // Empty list, special value for SCVAL_MASK_PTR
 // All address bits are 0 and flag == SCVAL_MASK_PTR
-constexpr uintptr_t SCVAL_NIL = 0x0000'0000'0000'0000 | SCVAL_FLAG_PTR;
+export constexpr uintptr_t SCVAL_NIL = 0x0000'0000'0000'0000 | SCVAL_FLAG_PTR;
 
-struct Sexp {
+export struct Sexp {
     uintptr_t _value;
 
     uint8_t get_flags() const { return _value & SCVAL_MASK_FLAG; }
@@ -263,29 +258,45 @@ struct Sexp {
     }
 };
 
+export struct Environment {
+    Heap heap;
+    SymbolPool sym_pool;
+
+    /// A stack of scopes, added as we call into functions and popped as we exit
+    Scope* curr_scope;
+    Scope* global_scope;
+
+    Environment();
+
+    const Sexp* lookup_binding(const Symbol& name) const;
+    void set_binding(const Symbol& name, Sexp value);
+};
+
 /// A heap allocated cons, with a car/left and cdr/right Sexp
-struct ConsCell {
+export struct ConsCell {
     static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_CONS_CELL;
 
     Sexp car;
     Sexp cdr;
 };
 
-struct String {
+export struct String {
     static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_STRING;
 
     std::string v;
 };
 
-struct CallFrame {
-    static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_CALL_FRAME;
+export struct UserProc {
+    static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_USER_PROC;
 
-    /// The CallFrame in the "previous level" of closure
-    HeapPtr<CallFrame> prev;
-    std::unordered_map<const Symbol*, Sexp> bindings;
+    const Symbol* name;
+    HeapPtr<Scope> closure_frame;
+    std::vector<const Symbol*> arguments;
+    // NOTE: we could use Sexp here, but since the body is always a list, pointing directly to ConsCell is just easier
+    HeapPtr<ConsCell> body;
 };
 
-struct BuiltinProc {
+export struct BuiltinProc {
     static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_BUILTIN_PROC;
 
     // NOTE: we don't bind parameters to names in a scope when evaluating builtin functions, instead just using the list directly
@@ -295,43 +306,27 @@ struct BuiltinProc {
     FnPtr fn;
 };
 
-struct UserProc {
-    static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_USER_PROC;
+export struct Scope {
+    static constexpr auto HEAP_OBJECT_TYPE = ObjectType::TYPE_CALL_FRAME;
 
-    const Symbol* name;
-    HeapPtr<CallFrame> closure_frame;
-    std::vector<const Symbol*> arguments;
-    // NOTE: we could use Sexp here, but since the body is always a list, pointing directly to ConsCell is just easier
-    HeapPtr<ConsCell> body;
-};
-
-struct Environment {
-    Heap heap;
-    SymbolPool sym_pool;
-
-    /// A stack of scopes, added as we call into functions and popped as we exit
-    CallFrame* curr_scope;
-    CallFrame* global_scope;
-
-    Environment();
-
-    const Sexp* lookup_binding(const Symbol& name) const;
-    void set_binding(const Symbol& name, Sexp value);
+    /// The CallFrame in the "previous level" of closure
+    HeapPtr<Scope> prev;
+    std::unordered_map<const Symbol*, Sexp> bindings;
 };
 
 /// Constructs a ConsCell on heap, with car = a and cdr = b, and return a reference Sexp to it.
-Sexp cons(Sexp a, Sexp b, Environment& env);
-void cons_inplace(Sexp a, Sexp& list, Environment& env);
+export Sexp cons(Sexp a, Sexp b, Environment& env);
+export void cons_inplace(Sexp a, Sexp& list, Environment& env);
 
 // NB: we use varadic template for perfect forwarding, std::initializer_list forces us to make copies
-template <typename... Ts>
+export template <typename... Ts>
 Sexp make_list_v(Environment& env, Ts&&... sexps) {
     Sexp the_list;
     FOLD_ITER_BACKWARDS(cons_inplace(std::forward<Ts>(sexps), the_list, env));
     return the_list;
 }
 
-template <typename TIter, typename TSentinel>
+export template <typename TIter, typename TSentinel>
 Sexp make_list(TIter&& iter, TSentinel&& sentinel, Environment& env) {
     // TODO use compact list optimization here
     Sexp lst;
@@ -343,27 +338,27 @@ Sexp make_list(TIter&& iter, TSentinel&& sentinel, Environment& env) {
 
 // Returns true if its cdr is a cons cell pointer, e.g. (1 . ()) or (1 . (2 . ()))
 // Returns false otherwise, such as (1 . 2)
-bool is_list(const ConsCell& cons) {
+export bool is_list(const ConsCell& cons) {
     return cons.cdr.is_ptr();
 }
 
 // Same as is_list(ConsCell) but ensures the Sexp is a ConsCell
-bool is_list(Sexp s) {
+export bool is_list(Sexp s) {
     if (!s.is_ptr()) return false;
     return is_list(*s.as_ptr().as<ConsCell>());
 }
 
-Sexp car(Sexp s);
-Sexp cdr(Sexp s);
-Sexp list_nth_elm(Sexp list, int idx, Environment& env);
+export Sexp car(Sexp s);
+export Sexp cdr(Sexp s);
+export Sexp list_nth_elm(Sexp list, int idx, Environment& env);
 
-void list_get_prefix(Sexp list, std::initializer_list<Sexp*> out_prefix, Sexp* out_rest, Environment& env);
-void list_get_everything(Sexp list, std::initializer_list<Sexp*> out, Environment& env);
+export void list_get_prefix(Sexp list, std::initializer_list<Sexp*> out_prefix, Sexp* out_rest, Environment& env);
+export void list_get_everything(Sexp list, std::initializer_list<Sexp*> out, Environment& env);
 
-UserProc* make_user_proc(Sexp param_decl, Sexp body_decl, Environment& env);
+export UserProc* make_user_proc(Sexp param_decl, Sexp body_decl, Environment& env);
 
-struct SexpListSentinel {};
-struct SexpListIterator {
+export struct SexpListSentinel {};
+export struct SexpListIterator {
     using Sentinel = SexpListSentinel;
 
     ConsCell* curr;
@@ -401,27 +396,29 @@ struct SexpListIterator {
         return curr == nullptr;
     }
 };
-using SexpListIterable = Iterable<SexpListIterator, SexpListIterator>;
+export using SexpListIterable = Iterable<SexpListIterator, SexpListIterator>;
 
-SexpListIterable iterate(ConsCell* cons, Environment& env) {
+export SexpListIterable iterate(ConsCell* cons, Environment& env) {
     return { SexpListIterator(cons, env) };
 }
-SexpListIterable iterate(Sexp s, Environment& env) {
+export SexpListIterable iterate(Sexp s, Environment& env) {
     return { SexpListIterator(s, env) };
 }
 
-std::vector<Sexp> parse_sexp(std::string_view src, Environment& env);
-std::string dump_sexp(Sexp sexp, Environment& env);
+export std::vector<Sexp> parse_sexp(std::string_view src, Environment& env);
+export std::string dump_sexp(Sexp sexp, Environment& env);
 
-Sexp call_user_proc(const UserProc& proc, Sexp params, Environment& env);
-
-Sexp eval(Sexp sexp, Environment& env);
-
-/// Basically (progn): evalute each element in `forms`, and return the result of the last one
-/// if `forms` is not a list, it is given to eval() to handle
-Sexp eval_maybe_many(Sexp forms, Environment& env);
-Sexp eval_many(ConsCell* forms, Environment& env);
+export Sexp call_user_proc(const UserProc& proc, Sexp params, Environment& env);
 
 void setup_scope_for_builtins(Environment& env);
+
+/// Implements (eval)
+export Sexp eval(Sexp sexp, Environment& env);
+
+/// If `forms` isd a list, given to eval_many();
+/// If `forms` is not a list, given to eval().
+export Sexp eval_maybe_many(Sexp forms, Environment& env);
+/// Implements (progn): evalute each element in `forms`, and return the result of the last one.
+export Sexp eval_many(ConsCell* forms, Environment& env);
 
 } // namespace yawarakai

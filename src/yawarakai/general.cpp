@@ -3,7 +3,6 @@ module;
 
 // TODO this file should be of module `yawarakai:lisp`, but if we do that, nothing from the :lisp interface unit is available here -- xmake bug?
 module yawarakai;
-
 import std;
 
 using namespace std::literals;
@@ -11,7 +10,7 @@ using namespace std::literals;
 namespace yawarakai {
 
 Environment::Environment() {
-    auto [s, _] = heap.allocate<CallFrame>();
+    auto [s, _] = heap.allocate<Scope>();
     curr_scope = s;
     global_scope = s;
 
@@ -19,7 +18,7 @@ Environment::Environment() {
 }
 
 const Sexp* Environment::lookup_binding(const Symbol& name) const {
-    CallFrame* curr = curr_scope;
+    Scope* curr = curr_scope;
     while (curr) {
         auto iter = curr->bindings.find(&name);
         if (iter != curr->bindings.end()) {
@@ -32,7 +31,7 @@ const Sexp* Environment::lookup_binding(const Symbol& name) const {
 }
 
 void Environment::set_binding(const Symbol& name, Sexp value) {
-    CallFrame* curr = curr_scope;
+    Scope* curr = curr_scope;
     while (curr) {
         auto iter = curr->bindings.find(&name);
         if (iter != curr->bindings.end()) {
