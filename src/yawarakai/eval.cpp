@@ -10,354 +10,356 @@ using namespace std::literals;
 namespace yawarakai {
 
 namespace {
-    Sexp wrap_number(double v) {
-        // TODO makes this less wack
-        if (auto n = static_cast<int32_t>(v); n == v)
-            return Sexp(n);
-        else
-            return Sexp(static_cast<float>(v));
-    }
+Sexp wrap_number(double v) {
+    // TODO makes this less wack
+    if (auto n = static_cast<int32_t>(v); n == v)
+        return Sexp(n);
+    else
+        return Sexp(static_cast<float>(v));
+}
 
-    Sexp builtin_add(Sexp params, Environment& env) {
-        double res = 0.0;
+Sexp builtin_add(Sexp params, Environment& env) {
+    double res = 0.0;
 
-        for (auto& param : iterate(params, env)) {
-            auto v = eval(param, env);
-            switch (v.get_flags()) {
-                case SCVAL_FLAG_INT: res += v.as_int(); break;
-                case SCVAL_FLAG_FLOAT: res += v.as_float(); break;
-                default: throw EvalException("+ cannot accept non-numerical parameters"s);
-            }
-        }
-
-        return wrap_number(res);
-    }
-
-    Sexp builtin_sub(Sexp params, Environment& env) {
-        double res = 0.0;
-        int param_cnt = 0;
-        for (auto& param : iterate(params, env)) {
-            auto v = eval(param, env);
-            double vf;
-            switch (v.get_flags()) {
-                case SCVAL_FLAG_INT: vf = v.as_int(); break;
-                case SCVAL_FLAG_FLOAT: vf = v.as_float(); break;
-                default: throw EvalException("- cannot accept non-numerical parameters"s);
-            }
-
-            if (param_cnt == 0)
-                res = vf;
-            else
-                res -= vf;
-
-            param_cnt += 1;
-        }
-
-        // Unary minus
-        if (param_cnt == 1) {
-            res = -res;
-        }
-
-        return wrap_number(res);
-    }
-
-    Sexp builtin_mul(Sexp params, Environment& env) {
-        double res = 1.0;
-        for (auto& param : iterate(params, env)) {
-            auto v = eval(param, env);
-            switch (v.get_flags()) {
-                case SCVAL_FLAG_INT: res *= v.as_int(); break;
-                case SCVAL_FLAG_FLOAT: res *= v.as_float(); break;
-                default: throw EvalException("* cannot accept non-numerical parameters"s);
-            }
-        }
-
-        return wrap_number(res);
-    }
-
-    Sexp builtin_div(Sexp params, Environment& env) {
-        double res = 0.0;
-        bool is_first = true;
-        for (auto& param : iterate(params, env)) {
-            auto v = eval(param, env);
-            double vf;
-            switch (v.get_flags()) {
-                case SCVAL_FLAG_INT: vf = v.as_int(); break;
-                case SCVAL_FLAG_FLOAT: vf = v.as_float(); break;
-                default: throw EvalException("/ cannot accept non-numerical parameters"s);
-            }
-
-            if (is_first) {
-                is_first = false;
-                res = vf;
-            } else {
-                res /= vf;
-            }
-        }
-
-        return wrap_number(res);
-    }
-
-    Sexp builtin_sqrt(Sexp params, Environment& env) {
-        Sexp p;
-        list_get_everything(params, { &p }, env);
-
-        auto v = eval(p, env);
-        double x;
+    for (auto& param : iterate(params, env)) {
+        auto v = eval(param, env);
         switch (v.get_flags()) {
-            case SCVAL_FLAG_INT: x = v.as_int(); break;
-            case SCVAL_FLAG_FLOAT: x = v.as_float(); break;
-            default: throw EvalException("sqrt cannot accept non-numerical parameters"s);
+            case SCVAL_FLAG_INT: res += v.as_int(); break;
+            case SCVAL_FLAG_FLOAT: res += v.as_float(); break;
+            default: throw EvalException("+ cannot accept non-numerical parameters"s);
         }
-
-        double res = std::sqrt(x);
-
-        return Sexp(static_cast<float>(res));
     }
 
-    Sexp builtin_if(Sexp params, Environment& env) {
-        Sexp cond;
-        Sexp true_case;
-        Sexp false_case;
-        list_get_everything(params, { &cond, &true_case, &false_case }, env);
+    return wrap_number(res);
+}
 
-        Sexp cond_val = eval(cond, env);
-        if (cond_val.evalute_bool()) {
-            return eval(true_case, env);
+Sexp builtin_sub(Sexp params, Environment& env) {
+    double res = 0.0;
+    int param_cnt = 0;
+    for (auto& param : iterate(params, env)) {
+        auto v = eval(param, env);
+        double vf;
+        switch (v.get_flags()) {
+            case SCVAL_FLAG_INT: vf = v.as_int(); break;
+            case SCVAL_FLAG_FLOAT: vf = v.as_float(); break;
+            default: throw EvalException("- cannot accept non-numerical parameters"s);
+        }
+
+        if (param_cnt == 0)
+            res = vf;
+        else
+            res -= vf;
+
+        param_cnt += 1;
+    }
+
+    // Unary minus
+    if (param_cnt == 1) {
+        res = -res;
+    }
+
+    return wrap_number(res);
+}
+
+Sexp builtin_mul(Sexp params, Environment& env) {
+    double res = 1.0;
+    for (auto& param : iterate(params, env)) {
+        auto v = eval(param, env);
+        switch (v.get_flags()) {
+            case SCVAL_FLAG_INT: res *= v.as_int(); break;
+            case SCVAL_FLAG_FLOAT: res *= v.as_float(); break;
+            default: throw EvalException("* cannot accept non-numerical parameters"s);
+        }
+    }
+
+    return wrap_number(res);
+}
+
+Sexp builtin_div(Sexp params, Environment& env) {
+    double res = 0.0;
+    bool is_first = true;
+    for (auto& param : iterate(params, env)) {
+        auto v = eval(param, env);
+        double vf;
+        switch (v.get_flags()) {
+            case SCVAL_FLAG_INT: vf = v.as_int(); break;
+            case SCVAL_FLAG_FLOAT: vf = v.as_float(); break;
+            default: throw EvalException("/ cannot accept non-numerical parameters"s);
+        }
+
+        if (is_first) {
+            is_first = false;
+            res = vf;
         } else {
-            return eval(false_case, env);
+            res /= vf;
         }
     }
 
-    Sexp builtin_eq(Sexp params, Environment& env) {
-        bool is_first = true;
-        Sexp prev;
-        for (auto& param : iterate(params, env)) {
-            Sexp curr = eval(param, env);
+    return wrap_number(res);
+}
 
-            if (is_first) {
-                is_first = false;
-                prev = curr;
-                continue;
-            }
+Sexp builtin_sqrt(Sexp params, Environment& env) {
+    Sexp p;
+    list_get_everything(params, { &p }, env);
 
-            if (curr._value != prev._value)
-                return Sexp(false);
-
-            prev = curr;
-        }
-
-        return Sexp(true);
+    auto v = eval(p, env);
+    double x;
+    switch (v.get_flags()) {
+        case SCVAL_FLAG_INT: x = v.as_int(); break;
+        case SCVAL_FLAG_FLOAT: x = v.as_float(); break;
+        default: throw EvalException("sqrt cannot accept non-numerical parameters"s);
     }
 
-    template <typename Op>
-    Sexp builtin_binary_op(Sexp params, Environment& env) {
-        bool is_first = true;
-        double prev;
-        Op op{};
-        for (auto& param : iterate(params, env)) {
-            auto v = eval(param, env);
-            // TODO support both numeric types
-            if (!v.is_float())
-                throw EvalException("parameters must be numerical"s);
+    double res = std::sqrt(x);
 
-            double curr = v.as_float();
-            if (!is_first) {
-                bool success = op(prev, curr);
-                if (!success)
-                    return Sexp(false);
-            }
+    return Sexp(static_cast<float>(res));
+}
+
+Sexp builtin_if(Sexp params, Environment& env) {
+    Sexp cond;
+    Sexp true_case;
+    Sexp false_case;
+    list_get_everything(params, { &cond, &true_case, &false_case }, env);
+
+    Sexp cond_val = eval(cond, env);
+    if (cond_val.evalute_bool()) {
+        return eval(true_case, env);
+    } else {
+        return eval(false_case, env);
+    }
+}
+
+Sexp builtin_eq(Sexp params, Environment& env) {
+    bool is_first = true;
+    Sexp prev;
+    for (auto& param : iterate(params, env)) {
+        Sexp curr = eval(param, env);
+
+        if (is_first) {
             is_first = false;
             prev = curr;
+            continue;
         }
 
-        return Sexp(true);
+        if (curr._value != prev._value)
+            return Sexp(false);
+
+        prev = curr;
     }
 
-    Sexp builtin_car(Sexp params, Environment& env) {
-        return car(eval(list_nth_elm(params, 0, env), env));
-    }
-    Sexp builtin_cdr(Sexp params, Environment& env) {
-        return cdr(eval(list_nth_elm(params, 0, env), env));
-    }
-    Sexp builtin_cons(Sexp params, Environment& env) {
-        Sexp a;
-        Sexp b;
-        list_get_everything(params, { &a, &b }, env);
-        return cons(
-            eval(a, env),
-            eval(b, env),
-            env);
-    }
+    return Sexp(true);
+}
 
-    Sexp builtin_is_null(Sexp params, Environment& env) {
-        return Sexp(eval(car(params), env).is_nil());
-    }
-
-    Sexp builtin_quote(Sexp params, Environment& env) {
-        return car(params);
-    }
-
-    Sexp builtin_define(Sexp params, Environment& env) {
-        auto& curr_scope = env.curr_scope->bindings;
-
-        Sexp declaration;
-        Sexp body;
-        list_get_prefix(params, { &declaration }, &body, env);
-
-        switch (declaration.get_flags()) {
-            // Defining a value
-            case SCVAL_FLAG_SYMBOL: {
-                auto& name = declaration.as_symbol();
-
-                Sexp val;
-                list_get_everything(body, { &val }, env);
-
-                curr_scope.insert_or_assign(&name, eval(val, env));
-            } break;
-
-            // Defining a function
-            case SCVAL_FLAG_PTR: {
-                Sexp decl_name;
-                Sexp decl_params;
-                list_get_prefix(declaration, { &decl_name }, &decl_params, env);
-
-                if (!decl_name.is_symbol())
-                    throw EvalException("proc name must be a symbol"s);
-                auto& proc_name = decl_name.as_symbol();
-
-                auto p = make_user_proc(decl_params, body, env);
-                p->name = &proc_name;
-
-                env.curr_scope->bindings.insert_or_assign(&proc_name, Sexp(p));
-            } break;
-
-            default:
-                throw EvalException("(define) expected symbol or func-declaration as 1st element"s);
+template <typename Op>
+Sexp builtin_binary_op(Sexp params, Environment& env) {
+    bool is_first = true;
+    double prev;
+    Op op{};
+    for (auto& param : iterate(params, env)) {
+        auto v = eval(param, env);
+        double curr;
+        if (v.is_float())
+            curr = v.as_float();
+        else if (v.is_int())
+            curr = v.as_int();
+        else
+            throw EvalException("parameters must be numerical"s);
+        if (!is_first) {
+            bool success = op(prev, curr);
+            if (!success)
+                return Sexp(false);
         }
-
-        return Sexp();
+        is_first = false;
+        prev = curr;
     }
 
-    Sexp builtin_lambda(Sexp params, Environment& env) {
-        Sexp decl_params;
-        Sexp body;
-        list_get_prefix(params, { &decl_params }, &body, env);
+    return Sexp(true);
+}
 
-        auto p = make_user_proc(decl_params, body, env);
+Sexp builtin_car(Sexp params, Environment& env) {
+    return car(eval(list_nth_elm(params, 0, env), env));
+}
+Sexp builtin_cdr(Sexp params, Environment& env) {
+    return cdr(eval(list_nth_elm(params, 0, env), env));
+}
+Sexp builtin_cons(Sexp params, Environment& env) {
+    Sexp a;
+    Sexp b;
+    list_get_everything(params, { &a, &b }, env);
+    return cons(
+        eval(a, env),
+        eval(b, env),
+        env);
+}
 
-        return Sexp(p);
+Sexp builtin_is_null(Sexp params, Environment& env) {
+    return Sexp(eval(car(params), env).is_nil());
+}
+
+Sexp builtin_quote(Sexp params, Environment& env) {
+    return car(params);
+}
+
+Sexp builtin_define(Sexp params, Environment& env) {
+    auto& curr_scope = env.curr_scope->bindings;
+
+    Sexp declaration;
+    Sexp body;
+    list_get_prefix(params, { &declaration }, &body, env);
+
+    switch (declaration.get_flags()) {
+        // Defining a value
+        case SCVAL_FLAG_SYMBOL: {
+            auto& name = declaration.as_symbol();
+
+            Sexp val;
+            list_get_everything(body, { &val }, env);
+
+            curr_scope.insert_or_assign(&name, eval(val, env));
+        } break;
+
+        // Defining a function
+        case SCVAL_FLAG_PTR: {
+            Sexp decl_name;
+            Sexp decl_params;
+            list_get_prefix(declaration, { &decl_name }, &decl_params, env);
+
+            if (!decl_name.is_symbol())
+                throw EvalException("proc name must be a symbol"s);
+            auto& proc_name = decl_name.as_symbol();
+
+            auto p = make_user_proc(decl_params, body, env);
+            p->name = &proc_name;
+
+            env.curr_scope->bindings.insert_or_assign(&proc_name, Sexp(p));
+        } break;
+
+        default:
+            throw EvalException("(define) expected symbol or func-declaration as 1st element"s);
     }
 
-    Sexp builtin_set(Sexp params, Environment& env) {
-        Sexp binding;
-        Sexp value;
-        list_get_prefix(params, { &binding, &value }, nullptr, env);
+    return Sexp();
+}
 
-        if (!binding.is_symbol())
-            throw EvalException("(set!) expected symbol as 1st argument"s);
+Sexp builtin_lambda(Sexp params, Environment& env) {
+    Sexp decl_params;
+    Sexp body;
+    list_get_prefix(params, { &decl_params }, &body, env);
 
-        env.set_binding(
-            binding.as_symbol(),
-            eval(value, env));
+    auto p = make_user_proc(decl_params, body, env);
 
-        return Sexp();
-    }
+    return Sexp(p);
+}
 
-    // (let ((id val-expr) ...) body ...)
-    // (let* ((id val-expr) ...) body ...)
-    Sexp do_let_unnamed(Sexp binding_forms, Sexp body, Environment& env, bool prebind_scope) {
-        auto [scope, _] = env.heap.allocate<CallFrame>();
-        scope->prev = HeapPtr(env.curr_scope);
+Sexp builtin_set(Sexp params, Environment& env) {
+    Sexp binding;
+    Sexp value;
+    list_get_prefix(params, { &binding, &value }, nullptr, env);
 
-        DEFER_RESTORE_VALUE(env.curr_scope);
-        if (prebind_scope)
-            env.curr_scope = scope;
+    if (!binding.is_symbol())
+        throw EvalException("(set!) expected symbol as 1st argument"s);
 
-        // Eval each let-binding-form
-        for (auto& form : iterate(binding_forms, env)) {
-            Sexp id;
-            Sexp val_expr;
-            list_get_prefix(form, { &id, &val_expr }, nullptr, env);
+    env.set_binding(
+        binding.as_symbol(),
+        eval(value, env));
 
-            if (!id.is_symbol())
-                throw EvalException("(let) id must be a symbol");
-            auto& id_sym = id.as_symbol();
+    return Sexp();
+}
 
-            scope->bindings.try_emplace(&id_sym, eval(val_expr, env));
-        }
+// (let ((id val-expr) ...) body ...)
+// (let* ((id val-expr) ...) body ...)
+Sexp do_let_unnamed(Sexp binding_forms, Sexp body, Environment& env, bool prebind_scope) {
+    auto [scope, _] = env.heap.allocate<CallFrame>();
+    scope->prev = HeapPtr(env.curr_scope);
 
-        if (!prebind_scope)
-            env.curr_scope = scope;
-
-        return eval_many(body.as_ptr<ConsCell>().get(), env);
-    }
-
-    // (let proc-id ((id val-expr) ...) body ...)
-    Sexp do_let_named(const Symbol& proc_name, Sexp binding_forms, Sexp body, Environment& env) {
-        auto [scope, _] = env.heap.allocate<CallFrame>();
-        scope->prev = HeapPtr(env.curr_scope);
-
-        DEFER_RESTORE_VALUE(env.curr_scope);
+    DEFER_RESTORE_VALUE(env.curr_scope);
+    if (prebind_scope)
         env.curr_scope = scope;
 
-        // Extract parameter ids, and bind val-exprs after evaluating them
-        std::vector<const Symbol*> proc_args;
-        for (auto& form : iterate(binding_forms, env)) {
-            Sexp id;
-            Sexp val_expr;
-            list_get_prefix(form, { &id, &val_expr }, nullptr, env);
+    // Eval each let-binding-form
+    for (auto& form : iterate(binding_forms, env)) {
+        Sexp id;
+        Sexp val_expr;
+        list_get_prefix(form, { &id, &val_expr }, nullptr, env);
 
-            if (!id.is_symbol())
-                throw EvalException("(let) id must be a symbol"s);
-            auto& id_sym = id.as_symbol();
+        if (!id.is_symbol())
+            throw EvalException("(let) id must be a symbol");
+        auto& id_sym = id.as_symbol();
 
-            proc_args.push_back(&id_sym);
-            scope->bindings.try_emplace(&id_sym, eval(val_expr, env));
-        }
-
-        auto [proc, DISCARD] = env.heap.allocate_only<UserProc>();
-        new (proc) UserProc{
-            .closure_frame = HeapPtr(env.curr_scope),
-            .arguments = std::move(proc_args),
-            .body = body.as_ptr<ConsCell>(),
-        };
-        scope->bindings.try_emplace(&proc_name, Sexp(HeapPtr<void>(proc)));
-
-        return eval_many(body.as_ptr<ConsCell>().get(), env);
+        scope->bindings.try_emplace(&id_sym, eval(val_expr, env));
     }
 
-    Sexp do_let(Sexp params, Environment& env, bool prebind_scope) {
-        Sexp arg_1st;
-        Sexp arg_rest;
-        list_get_prefix(params, { &arg_1st }, &arg_rest, env);
+    if (!prebind_scope)
+        env.curr_scope = scope;
 
-        auto [scope, _] = env.heap.allocate<CallFrame>();
-        scope->prev = HeapPtr(env.curr_scope);
+    return eval_many(body.as_ptr<ConsCell>().get(), env);
+}
 
-        if (arg_1st.is_symbol()) {
-            Sexp binding_forms;
-            Sexp body;
-            list_get_prefix(arg_rest, { &binding_forms }, &body, env);
+// (let proc-id ((id val-expr) ...) body ...)
+Sexp do_let_named(const Symbol& proc_name, Sexp binding_forms, Sexp body, Environment& env) {
+    auto [scope, _] = env.heap.allocate<CallFrame>();
+    scope->prev = HeapPtr(env.curr_scope);
 
-            return do_let_named(arg_1st.as_symbol(), binding_forms, body, env);
-        } else {
-            Sexp binding_forms = arg_1st;
-            Sexp body = arg_rest;
-            return do_let_unnamed(binding_forms, body, env, prebind_scope);
-        }
+    DEFER_RESTORE_VALUE(env.curr_scope);
+    env.curr_scope = scope;
+
+    // Extract parameter ids, and bind val-exprs after evaluating them
+    std::vector<const Symbol*> proc_args;
+    for (auto& form : iterate(binding_forms, env)) {
+        Sexp id;
+        Sexp val_expr;
+        list_get_prefix(form, { &id, &val_expr }, nullptr, env);
+
+        if (!id.is_symbol())
+            throw EvalException("(let) id must be a symbol"s);
+        auto& id_sym = id.as_symbol();
+
+        proc_args.push_back(&id_sym);
+        scope->bindings.try_emplace(&id_sym, eval(val_expr, env));
     }
 
-    Sexp builtin_let_basic(Sexp params, Environment& env) {
-        return do_let(params, env, false);
-    }
-    Sexp builtin_let_star(Sexp params, Environment& env) {
-        return do_let(params, env, true);
-    }
+    auto [proc, DISCARD] = env.heap.allocate_only<UserProc>();
+    new (proc) UserProc{
+        .closure_frame = HeapPtr(env.curr_scope),
+        .arguments = std::move(proc_args),
+        .body = body.as_ptr<ConsCell>(),
+    };
+    scope->bindings.try_emplace(&proc_name, Sexp(HeapPtr<void>(proc)));
 
-    Sexp builtin_progn(Sexp params, Environment& env) {
-        return eval_many(params.as_ptr<ConsCell>().get(), env);
+    return eval_many(body.as_ptr<ConsCell>().get(), env);
+}
+
+Sexp do_let(Sexp params, Environment& env, bool prebind_scope) {
+    Sexp arg_1st;
+    Sexp arg_rest;
+    list_get_prefix(params, { &arg_1st }, &arg_rest, env);
+
+    auto [scope, _] = env.heap.allocate<CallFrame>();
+    scope->prev = HeapPtr(env.curr_scope);
+
+    if (arg_1st.is_symbol()) {
+        Sexp binding_forms;
+        Sexp body;
+        list_get_prefix(arg_rest, { &binding_forms }, &body, env);
+
+        return do_let_named(arg_1st.as_symbol(), binding_forms, body, env);
+    } else {
+        Sexp binding_forms = arg_1st;
+        Sexp body = arg_rest;
+        return do_let_unnamed(binding_forms, body, env, prebind_scope);
     }
+}
+
+Sexp builtin_let_basic(Sexp params, Environment& env) {
+    return do_let(params, env, false);
+}
+Sexp builtin_let_star(Sexp params, Environment& env) {
+    return do_let(params, env, true);
+}
+
+Sexp builtin_progn(Sexp params, Environment& env) {
+    return eval_many(params.as_ptr<ConsCell>().get(), env);
+}
 } // namespace
 
 Sexp call_user_proc(const UserProc& proc, Sexp params, Environment& env) {
@@ -397,6 +399,9 @@ Sexp eval(Sexp sexp, Environment& env) {
             if (func.is_symbol()) {
                 auto& proc_name = func.as_symbol();
                 auto proc = env.lookup_binding(proc_name);
+
+                if (proc == nullptr)
+                    return Sexp();
 
                 if (auto up = proc->as_ptr<UserProc>())
                     return call_user_proc(*up, params, env);
@@ -445,6 +450,40 @@ Sexp eval_many(ConsCell* forms, Environment& env) {
     }
 
     std::unreachable();
+}
+
+void setup_scope_for_builtins(Environment& env) {
+    auto& s = env.global_scope->bindings;
+    auto& h = env.heap;
+    auto& p = env.sym_pool;
+#define PROC(name, func)                                      \
+    do {                                                      \
+        auto& sym = p.intern(name);                           \
+        auto [proc, _] = h.allocate<BuiltinProc>(&sym, func); \
+        s.emplace(&sym, Sexp(proc));                          \
+    } while (false)
+    PROC("+", builtin_add);
+    PROC("-", builtin_sub);
+    PROC("*", builtin_mul);
+    PROC("/", builtin_div);
+    PROC("sqrt", builtin_sqrt);
+    PROC("if", builtin_if);
+    PROC("=", builtin_binary_op<std::equal_to<>>);
+    PROC("<", builtin_binary_op<std::less<>>);
+    PROC("<=", builtin_binary_op<std::less_equal<>>);
+    PROC(">", builtin_binary_op<std::greater<>>);
+    PROC(">=", builtin_binary_op<std::greater_equal<>>);
+    PROC("car", builtin_car);
+    PROC("cdr", builtin_cdr);
+    PROC("cons", builtin_cons);
+    PROC("null?", builtin_is_null);
+    PROC("quote", builtin_quote);
+    PROC("define", builtin_define);
+    PROC("lambda", builtin_lambda);
+    PROC("set!", builtin_set);
+    PROC("let", builtin_let_basic);
+    PROC("let*", builtin_let_star);
+#undef PROC
 }
 
 } // namespace yawarakai

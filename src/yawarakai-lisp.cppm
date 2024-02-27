@@ -28,7 +28,7 @@ struct EvalException {
 };
 
 struct Symbol {
-    const char* _data = nullptr;
+    uintptr_t _data = 0;
     size_t _size = 0;
 
     Symbol() = default;
@@ -38,28 +38,29 @@ struct Symbol {
 
     Symbol(Symbol&& s) noexcept
         : _data{ s._data }
-        , _size{ s._size } {
-        s._data = nullptr;
+        , _size{ s._size } //
+    {
+        s._data = 0;
         s._size = 0;
     }
 
     Symbol& operator=(Symbol&& s) noexcept {
-        if ((std::bit_cast<uintptr_t>(_data) & 0x1) == 0) {
-            delete _data;
+        if ((_data & 0x1) == 0) {
+            delete data();
         }
-        this->_data = std::exchange(s._data, nullptr);
+        this->_data = std::exchange(s._data, 0);
         this->_size = std::exchange(s._size, 0);
         return *this;
     }
 
     ~Symbol() {
         // NOTE: for _data == nullptr, delete is no-op, so considering that as heap-allocated is fine
-        if ((std::bit_cast<uintptr_t>(_data) & 0x1) == 0) {
-            delete _data;
+        if ((_data & 0x1) == 0) {
+            delete data();
         }
     }
 
-    const char* data() const { return std::bit_cast<const char*>(std::bit_cast<uintptr_t>(_data) & ~0x1); }
+    const char* data() const { return std::bit_cast<const char*>(_data & ~0x1); }
     size_t size() const { return _size; }
 
     operator std::string_view() const { return { data(), size() }; }
@@ -70,7 +71,7 @@ private:
     friend struct SymbolPool;
     // Constructor for string literals
     Symbol(const char* str, size_t len)
-        : _data{ std::bit_cast<const char*>(std::bit_cast<uintptr_t>(str) | 0x1) } // Set lowest bit, indicating this is a literal
+        : _data{ std::bit_cast<uintptr_t>(str) | 0x1 } // Set lowest bit, indicating this is a literal
         , _size{ len } //
     {
         // Sanity check: the pointer is not using the lowest bit
@@ -78,8 +79,7 @@ private:
     }
 };
 
-export // make Clion stop complaining
-    struct SymbolPool {
+struct SymbolPool {
     // TODO custom hashtable
     std::unordered_map<std::string, Symbol, StringHash, std::equal_to<>> _pool;
 
@@ -87,10 +87,11 @@ export // make Clion stop complaining
     // This *technically* also accepts things like `const char arr[5];` - just don't do it
     template <size_t N>
     const Symbol& intern(const char (&str)[N]) {
-        auto& sym = _pool[std::string(str, N)];
+        // Length of the char array from a literal contains the null terminator
+        auto& sym = _pool[std::string(str, N - 1)];
         // If this Symbol is default constructed, i.e. this is a new entry in the symbol pool
-        if (sym._data == nullptr) {
-            sym = Symbol(str, N);
+        if (sym.data() == nullptr) {
+            sym = Symbol(str, N - 1);
         }
         return sym;
     }
@@ -98,10 +99,10 @@ export // make Clion stop complaining
     // Constructor for runtime strings (make a copy)
     const Symbol& intern(const char* str, size_t len) {
         auto& sym = _pool[std::string(str, len)];
-        if (sym._data == nullptr) {
+        if (sym.data() == nullptr) {
             char* data = new char[len + 1]{};
             sym._size = len;
-            sym._data = data;
+            sym._data = std::bit_cast<uintptr_t>(data);
             // Sanity check: the pointer is not using the lowest bit
             assert((std::bit_cast<uintptr_t>(data) & 0x1) == 0);
             // Copy string content
@@ -119,7 +120,7 @@ export // make Clion stop complaining
 };
 
 // All heap objects are 8-byte aligned
-constexpr uintptr_t SCVAL_MASK_FLAG = 0xffff'ffff'ffff'fff8;
+constexpr uintptr_t SCVAL_MASK_FLAG = 0x0000'0000'0000'0007;
 
 // 32 bit signed integer in the MSB
 constexpr unsigned int SCVAL_FLAG_INT = 0b000;
@@ -136,15 +137,10 @@ constexpr uintptr_t SCVAL_TRUE = 0x0000'0000'0000'0010 | SCVAL_FLAG_BOOL;
 constexpr unsigned int SCVAL_FLAG_SYMBOL = 0b110;
 
 // 64-bit pointer with the lowest 3 bits assumed to be 0 (aligned to 8 byte boundries)
-// As long as the LSB is set to 1, we consider the Sexp a pointer
-// TODO this leaves 3 more flag combinations unused, should we use them to mark other common objects, or repurpose for something else?
-//      e.g. proper infinite precision fixnums
-constexpr unsigned int SCVAL_MASK_PTR = 0b001;
-// The specific "generic" kind of pointer
 constexpr unsigned int SCVAL_FLAG_PTR = 0b001;
 // Empty list, special value for SCVAL_MASK_PTR
 // All address bits are 0 and flag == SCVAL_MASK_PTR
-constexpr uintptr_t SCVAL_NIL = 0x0000'0000'0000'0000 | SCVAL_MASK_PTR;
+constexpr uintptr_t SCVAL_NIL = 0x0000'0000'0000'0000 | SCVAL_FLAG_PTR;
 
 struct Sexp {
     uintptr_t _value;
@@ -200,6 +196,9 @@ struct Sexp {
         return is_bool() ? _value == SCVAL_TRUE : true;
     }
 
+    // // Using a template + concept to prohibit pointer and integral implicit convdrsion to bool
+    // template <std::same_as<bool> T>
+    // explicit Sexp(T v) { set_bool(v); }
     explicit Sexp(bool v) { set_bool(v); }
 
     void set_bool(bool v) {
@@ -219,7 +218,7 @@ struct Sexp {
 
     void set_symbol(const Symbol& sym) {
         auto bits = std::bit_cast<uintptr_t>(&sym);
-        assert((bits & 0b111) == 0);
+        assert((bits & SCVAL_MASK_FLAG) == 0);
         _value = bits | SCVAL_FLAG_SYMBOL;
     }
 
@@ -227,8 +226,7 @@ struct Sexp {
 
     bool is_nil() const { return _value == SCVAL_NIL; }
 
-    // TODO replace by a strict _FLAG comparision?
-    bool is_ptr() const { return (_value & 1) == 1; }
+    bool is_ptr() const { return get_flags() == SCVAL_FLAG_PTR; }
 
     template <typename T>
     bool is_ptr() const {
@@ -260,7 +258,7 @@ struct Sexp {
 
     void set_pointer(HeapPtr<void> v) {
         auto bits = std::bit_cast<uintptr_t>(v.get());
-        assert((bits & 0b111) == 0);
+        assert((bits & SCVAL_MASK_FLAG) == 0);
         _value = bits | SCVAL_FLAG_PTR;
     }
 };
@@ -423,5 +421,7 @@ Sexp eval(Sexp sexp, Environment& env);
 /// if `forms` is not a list, it is given to eval() to handle
 Sexp eval_maybe_many(Sexp forms, Environment& env);
 Sexp eval_many(ConsCell* forms, Environment& env);
+
+void setup_scope_for_builtins(Environment& env);
 
 } // namespace yawarakai

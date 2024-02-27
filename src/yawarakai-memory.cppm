@@ -159,17 +159,15 @@ public:
     template <typename T, typename... TArgs>
     std::pair<T*, ObjectHeader*> allocate(TArgs&&... args) {
         auto [obj_raw, header] = allocate(sizeof(T), alignof(T));
-
         auto obj = new (obj_raw) T(std::forward<TArgs>(args)...);
-
         header->set_type(T::HEAP_OBJECT_TYPE);
-
         return { obj, header };
     }
 
     template <typename T>
     std::pair<T*, ObjectHeader*> allocate_only() {
         auto [obj_raw, header] = allocate(sizeof(T), alignof(T));
+        header->set_type(T::HEAP_OBJECT_TYPE);
         return { reinterpret_cast<T*>(obj_raw), header };
     }
 

@@ -80,7 +80,8 @@ Heap::~Heap() {
 }
 
 std::pair<std::byte*, ObjectHeader*> Heap::allocate(size_t size, size_t alignment) {
-    // TODO fix this...
+    // We only support types that aligns to 64-bit word boundraries
+    // because Sexp uses pointer tagging with the lowest 3 bits
     assert(alignment == alignof(void*));
 
     auto& hg = heap_segments.back();
@@ -101,7 +102,7 @@ std::pair<std::byte*, ObjectHeader*> Heap::allocate(size_t size, size_t alignmen
     hg.last_object = new_obj_header;
 
     // Padding members initialized to 0 automatically
-    auto h = new(new_obj_header) ObjectHeader{};
+    auto h = new (new_obj_header) ObjectHeader{};
     h->set_size(size);
     h->set_alignment(alignment);
     h->set_type(ObjectType::TYPE_UNKNOWN);

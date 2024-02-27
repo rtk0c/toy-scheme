@@ -14,6 +14,8 @@ Environment::Environment() {
     auto [s, _] = heap.allocate<CallFrame>();
     curr_scope = s;
     global_scope = s;
+
+    setup_scope_for_builtins(*this);
 }
 
 const Sexp* Environment::lookup_binding(const Symbol& name) const {
@@ -80,8 +82,7 @@ Sexp list_nth_elm(Sexp list, int idx, Environment& env) {
     if (n_to_go != 0) {
         throw EvalException("list_nth_elm(): index out of bounds"s);
     }
-    // TODO replace this with car() ?
-    return curr->as_ptr<ConsCell>()->car;
+    return car(*curr);
 }
 
 void list_get_prefix(Sexp list, std::initializer_list<Sexp*> out_prefix, Sexp* out_rest, Environment& env) {
@@ -136,21 +137,21 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
 
     struct ParserStackFrame {
         std::vector<Sexp> children;
-        const Sexp* wrapper = {};
+        Sexp wrapper;
     };
     std::vector<ParserStackFrame> cs;
 
     cs.push_back(ParserStackFrame());
 
     size_t cursor = 0;
-    const Sexp* next_sexp_wrapper = nullptr;
+    Sexp next_sexp_wrapper;
 
     auto push_sexp_to_parent = [&](Sexp sexp) {
         auto& target = cs.back().children;
-        if (next_sexp_wrapper) {
+        if (!next_sexp_wrapper.is_nil()) {
             // Turns (my-sexp la la la) into (<the wrapper> (my-sexp la la la))
-            target.push_back(make_list_v(env, *next_sexp_wrapper, std::move(sexp)));
-            next_sexp_wrapper = nullptr;
+            target.push_back(make_list_v(env, next_sexp_wrapper, sexp));
+            next_sexp_wrapper = Sexp();
         } else {
             target.push_back(std::move(sexp));
         }
@@ -171,7 +172,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
 
 #define CHECK_FOR_WRAP(literal, sym) \
     if (src[cursor] == literal) {    \
-        next_sexp_wrapper = &sym;    \
+        next_sexp_wrapper = sym;     \
         cursor++;                    \
         continue;                    \
     }
@@ -182,10 +183,10 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
 
         if (src[cursor] == '(') {
             ParserStackFrame psf;
-            ;
-            if (next_sexp_wrapper) {
+
+            if (!next_sexp_wrapper.is_nil()) {
                 psf.wrapper = next_sexp_wrapper;
-                next_sexp_wrapper = nullptr;
+                next_sexp_wrapper = Sexp();
             }
 
             cs.push_back(std::move(psf));
@@ -204,8 +205,8 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
             for (auto it = curr.children.rbegin(); it != curr.children.rend(); ++it) {
                 cons_inplace(std::move(*it), list, env);
             }
-            if (curr.wrapper)
-                list = make_list_v(env, *curr.wrapper, std::move(list));
+            if (!curr.wrapper.is_nil())
+                list = make_list_v(env, curr.wrapper, std::move(list));
             cs.pop_back(); // Removes `curr`
 
             auto& parent = cs.back();
@@ -293,7 +294,7 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
 
         {
             float v;
-            auto [rest, ec] = std::from_chars(&src[cursor], &*src.end(), v);
+            auto [rest, ec] = std::from_chars(&src[cursor], src.data() + src.size(), v);
             if (ec == std::errc()) {
                 // TODO proper Scheme numeric literal parsing
                 if (auto n = static_cast<int32_t>(v); n == v)
@@ -375,10 +376,19 @@ void dump_sexp_impl(std::string& output, Sexp sexp, Environment& env) {
 
         case SCVAL_FLAG_PTR: {
             HeapPtr<void> ptr = sexp.as_ptr();
+
+            // Support dumping empty lists
+            // For non-empty lists, the terminating nil is automatically handled by SexpListIterator
+            if (ptr == nullptr) {
+                output += "'()";
+                break;
+            }
+
             switch (ptr.get_type()) {
                 using enum ObjectType;
 
                 case TYPE_UNKNOWN: {
+                    output += "#UNKNOWN";
                 } break;
 
                 case TYPE_CONS_CELL: {
@@ -408,7 +418,7 @@ void dump_sexp_impl(std::string& output, Sexp sexp, Environment& env) {
                     auto& v = *ptr.get_as_unchecked<BuiltinProc>();
                     if (v.name->empty()) {
                         // Unnamed proc, probably a lambda
-                        output += "#PROC";
+                        output += "#PROC:<unnamed>";
                     } else {
                         output += "#PROC:";
                         output += *v.name;

@@ -64,16 +64,17 @@ void run_buffer(std::string_view buffer, const ProgramOptions& opts, ywrk::Envir
 
     for (auto& sexp : sexps) {
         try {
+            std::cout << "parsed: " << ywrk::dump_sexp(sexp, env) << std::endl;
             if (opts.parse_only) {
-                std::cout << ywrk::dump_sexp(sexp, env) << '\n';
+                std::cout << ywrk::dump_sexp(sexp, env) << std::endl;
             } else {
                 auto res = ywrk::eval(sexp, env);
-                std::cout << ywrk::dump_sexp(res, env) << '\n';
+                std::cout << ywrk::dump_sexp(res, env) << std::endl;
             }
         } catch (const ywrk::EvalException& e) {
-            std::cerr << "Eval exception: " << e.msg << '\n';
+            std::cerr << "Eval exception: " << e.msg << std::endl;
         } catch (const std::runtime_error& e) {
-            std::cerr << "Internal error: " << e.what() << '\n';
+            std::cerr << "Internal error: " << e.what() << std::endl;
         }
     }
 }
