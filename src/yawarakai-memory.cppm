@@ -198,6 +198,16 @@ public:
                     case TYPE_CALL_FRAME:
                         visitor(reinterpret_cast<Scope*>(obj));
                         break;
+                    // TODO
+                    // case TYPE_STRING:
+                    //     visitor(reinterpret_cast<String*>(obj));
+                    //     break;
+                    // case TYPE_USER_PROC:
+                    //     visitor(reinterpret_cast<String*>(obj));
+                    //     break;
+                    // case TYPE_BUILTIN_PROC:
+                    //     visitor(reinterpret_cast<String*>(obj));
+                    //     break;
                 }
             }
         }

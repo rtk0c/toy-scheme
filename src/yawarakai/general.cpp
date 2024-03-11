@@ -1,7 +1,6 @@
 module;
 #include <cassert>
 
-// TODO this file should be of module `yawarakai:lisp`, but if we do that, nothing from the :lisp interface unit is available here -- xmake bug?
 module yawarakai;
 import std;
 
@@ -129,49 +128,123 @@ UserProc* make_user_proc(Sexp param_decl, Sexp body_decl, Environment& env) {
     return proc;
 }
 
-std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
-    auto sym_quote = Sexp(env.sym_pool.intern("quote"));
-    auto sym_unquote = Sexp(env.sym_pool.intern("unquote"));
-    auto sym_quasiquote = Sexp(env.sym_pool.intern("quasiquote"));
+class SexpParser {
+public:
+    /* ---- Inputs ---- */
+    /* Initalize them with aggregate initilization, and then call parse() */
+    Environment* env;
+    std::string_view src;
 
-    struct ParserStackFrame {
-        std::vector<Sexp> children;
-        Sexp wrapper;
-    };
-    std::vector<ParserStackFrame> cs;
+private:
+    /* ---- State Variables ---- */
+    /// A path of every list we have to visit to get to `curr`
+    /// For example, suppose we are parsing the following source, and the cursor is denoted by '|':
+    ///     (define (a b)
+    ///       (my-func a |b))
+    /// `curr` points to the the cdr of th e ConsCell `(a . '())`.
+    /// To push some `Sexp s` into the current list, just set curr to a new ConsCell `(s . '())`, and then set `curr` to its cdr (same logic as `yawarakai::cons_inplace()`).
+    std::vector<Sexp*> path;
+    Sexp* curr;
+    /// If not null, the next sexp `x` produced by the parser loop shall be rewritten as `(wrapper x)`
+    const Symbol* next_sexp_wrapper = nullptr;
+    size_t cursor;
 
-    cs.push_back(ParserStackFrame());
+public:
+    // Defined out of line to reduce indentation
+    Sexp parse();
 
-    size_t cursor = 0;
-    Sexp next_sexp_wrapper;
-
-    auto push_sexp_to_parent = [&](Sexp sexp) {
-        auto& target = cs.back().children;
-        if (!next_sexp_wrapper.is_nil()) {
-            // Turns (my-sexp la la la) into (<the wrapper> (my-sexp la la la))
-            target.push_back(make_list_v(env, next_sexp_wrapper, sexp));
-            next_sexp_wrapper = Sexp();
-        } else {
-            target.push_back(std::move(sexp));
+private:
+    Sexp* push_sexp(Sexp s) {
+        if (next_sexp_wrapper != nullptr) {
+            // TODO quoting is broken
+            Sexp wrapped_s = make_list_v(*env, Sexp(*next_sexp_wrapper), s);
+            s = wrapped_s;
+            next_sexp_wrapper = nullptr;
         }
-    };
+
+        // Allocate the cell holding the value
+        auto [the_cons, _] = env->heap.allocate<ConsCell>();
+        the_cons->car = s;
+
+        Sexp* result = &the_cons->car; // pointer to the pushed value
+
+        // Advance `curr`
+        *curr = Sexp(the_cons);
+        curr = &the_cons->cdr;
+
+        return result;
+    }
+
+    void enter_nesting() {
+        // The nil is our nested list
+        // Sexp wrapping is taken care by push_sexp() automatically
+        Sexp* car = push_sexp(Sexp());
+        Sexp* cdr = curr;
+        path.push_back(cdr);
+        curr = car;
+    }
+
+    bool leave_nesting() {
+        if (path.empty())
+            return false;
+
+        curr = path.back();
+        path.pop_back();
+        return true;
+    }
+
+    static bool is_token_separator(char c) {
+        return std::isspace(c) || c == '(' || c == ')';
+    }
+
+    std::string_view take_token() {
+        size_t begin = cursor;
+        while (cursor < src.length() && !is_token_separator(src[cursor]))
+            cursor += 1;
+        size_t end = cursor;
+
+        const char* d = src.data();
+        return std::string_view(d + begin, d + end);
+    }
+
+    void skip_until(char c) {
+        while (cursor < src.length() && src[cursor] != c)
+            cursor += 1;
+    }
+};
+
+Sexp SexpParser::parse() {
+    this->path = {};
+    this->curr = {};
+    this->cursor = 0;
+    this->next_sexp_wrapper = nullptr;
+
+    // Synthesized a top-level list, so we can pretend that every sexp in the source file is actually inside a giant list enclosing everything
+    Sexp program;
+    curr = &program;
+    // We do not push into path, because it makes no sense to leave the synthesized top-level
+    /*path.push_back(curr);*/
+
+    auto& sym_quote = env->sym_pool.intern("quote");
+    auto& sym_unquote = env->sym_pool.intern("unquote");
+    auto& sym_quasiquote = env->sym_pool.intern("quasiquote");
 
     while (cursor < src.length()) {
+        // Skip all whitespace
+        // Token splitting is automatically handled by each case (it stops right on a whitespace character)
         if (std::isspace(src[cursor])) {
-            cursor += 1;
+            ++cursor;
             continue;
         }
 
-        // Eat comments
         if (src[cursor] == ';') {
-            while (cursor < src.length() && src[cursor] != '\n')
-                cursor += 1;
+            skip_until('\n');
             continue;
         }
 
 #define CHECK_FOR_WRAP(literal, sym) \
     if (src[cursor] == literal) {    \
-        next_sexp_wrapper = sym;     \
+        next_sexp_wrapper = &(sym);  \
         cursor++;                    \
         continue;                    \
     }
@@ -181,36 +254,12 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
 #undef CHECK_FOR_WRAP
 
         if (src[cursor] == '(') {
-            ParserStackFrame psf;
-
-            if (!next_sexp_wrapper.is_nil()) {
-                psf.wrapper = next_sexp_wrapper;
-                next_sexp_wrapper = Sexp();
-            }
-
-            cs.push_back(std::move(psf));
-
+            enter_nesting();
             cursor += 1;
             continue;
         }
-
         if (src[cursor] == ')') {
-            if (cs.size() == 1) {
-                throw ParseException("unbalanced parenthesis"s);
-            }
-
-            ParserStackFrame& curr = cs.back();
-            Sexp list;
-            for (auto it = curr.children.rbegin(); it != curr.children.rend(); ++it) {
-                cons_inplace(std::move(*it), list, env);
-            }
-            if (!curr.wrapper.is_nil())
-                list = make_list_v(env, curr.wrapper, std::move(list));
-            cs.pop_back(); // Removes `curr`
-
-            auto& parent = cs.back();
-            parent.children.push_back(std::move(list));
-
+            leave_nesting();
             cursor += 1;
             continue;
         }
@@ -239,35 +288,28 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
             }
             cursor += 1;
 
-            auto [h_str, _] = env.heap.allocate<String>();
+            auto [h_str, _] = env->heap.allocate<String>();
             auto& str = h_str->v;
             str.reserve(str_size);
 
             size_t i = str_begin;
             while (i < str_begin + str_size) {
-                if (src[i] == '\\') {
-                    char esc = src[i + 1];
-                    switch (esc) {
-                        case 'n':
-                            str.push_back('\n');
-                            break;
-                        case '\\':
-                            str.push_back('\\');
-                            break;
-                        default: {
-                            throw ParseException(std::format("invalid escaped char '{}'", esc));
-                        } break;
-                    }
-
-                    i += 2;
+                if (src[i] != '\\') {
+                    str.push_back(src[i]);
+                    i += 1;
                     continue;
                 }
 
-                str.push_back(src[i]);
-                i += 1;
+                char esc = src[i + 1];
+                i += 2;
+                switch (esc) {
+                    case 'n': str.push_back('\n'); break;
+                    case '\\': str.push_back('\\'); break;
+                    default: throw ParseException(std::format("invalid escaped char '{}'", esc));
+                }
             }
 
-            push_sexp_to_parent(Sexp(h_str));
+            push_sexp(Sexp(h_str));
 
             continue;
         }
@@ -279,63 +321,53 @@ std::vector<Sexp> parse_sexp(std::string_view src, Environment& env) {
             char next_c = src[cursor];
             cursor += 1;
 
-            switch (next_c) {
-                case 't':
-                    push_sexp_to_parent(Sexp(true));
-                    continue;
-                case 'f':
-                    push_sexp_to_parent(Sexp(false));
-                    continue;
-                case ':': break; // TODO keyword argument
-                default: throw ParseException("invalid #-symbol"s);
-            }
-        }
-
-        {
-            float v;
-            auto [rest, ec] = std::from_chars(&src[cursor], src.data() + src.size(), v);
-            if (ec == std::errc()) {
-                // TODO proper Scheme numeric literal parsing
-                if (auto n = static_cast<int32_t>(v); n == v)
-                    push_sexp_to_parent(Sexp(n));
-                else
-                    push_sexp_to_parent(Sexp(v));
-
-                cursor += rest - &src[cursor];
+            auto token = take_token();
+            if (token == "t"sv) {
+                push_sexp(Sexp(true));
                 continue;
-            } else if (ec == std::errc::result_out_of_range) {
-                throw ParseException("number literal out of range"s);
-            } else if (ec == std::errc::invalid_argument) {
-                // Not a number
             }
-        }
-
-        {
-            size_t sym_size = 0;
-            size_t sym_begin = cursor;
-
-            while (true) {
-                if (cursor >= src.length())
-                    break;
-                char c = src[cursor];
-                if (std::isspace(c) || c == '(' || c == ')')
-                    break;
-
-                sym_size += 1;
-                cursor += 1;
+            if (token == "f"sv) {
+                push_sexp(Sexp(false));
+                continue;
             }
 
-            char next_c = src[cursor];
-            if (std::isspace(next_c))
-                cursor += 1;
-
-            const Symbol& h_sym = env.sym_pool.intern(&src[sym_begin], sym_size);
-            push_sexp_to_parent(Sexp(h_sym));
+            throw ParseException("invalid #-symbol"s);
         }
+
+        auto token = take_token();
+
+        // Try parse a number literal
+        float v;
+        auto [rest, ec] = std::from_chars(&src[cursor], src.data() + src.size(), v);
+        if (ec == std::errc()) {
+            // TODO proper Scheme numeric literal parsing
+            if (auto n = static_cast<int32_t>(v); n == v)
+                push_sexp(Sexp(n));
+            else
+                push_sexp(Sexp(v));
+
+            cursor += rest - &src[cursor];
+            continue;
+        } else if (ec == std::errc::result_out_of_range) {
+            throw ParseException("number literal out of range"s);
+        } else if (ec == std::errc::invalid_argument) {
+            // Not a number, continue
+        }
+
+        // Parse a symbol
+        const Symbol& h_sym = env->sym_pool.intern(token);
+        push_sexp(Sexp(h_sym));
     }
 
-    // NB: this is not against NRVO: our return value is heap allocated anyways (in a std::vector), so we must use std::move
-    return std::move(cs[0].children);
+    return program;
+}
+
+Sexp parse_sexp(std::string_view src, Environment& env) {
+    SexpParser parser;
+    parser.env = &env;
+    parser.src = src;
+
+    return parser.parse();
 }
 
 template <typename T>

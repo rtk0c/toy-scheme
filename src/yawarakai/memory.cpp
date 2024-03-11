@@ -24,11 +24,15 @@ size_t ObjectHeader::_read_size() const {
 }
 
 size_t ObjectHeader::get_size() const {
+    // TODO just store the size in the header?
     switch (get_type()) {
         using enum ObjectType;
         case TYPE_UNKNOWN: return _read_size();
         case TYPE_CONS_CELL: return sizeof(ConsCell);
         case TYPE_CALL_FRAME: return sizeof(Scope);
+        case TYPE_STRING: return sizeof(String);
+        case TYPE_USER_PROC: return sizeof(UserProc);
+        case TYPE_BUILTIN_PROC: return sizeof(BuiltinProc);
     }
     return 0;
 }
@@ -47,6 +51,9 @@ size_t ObjectHeader::get_alignment() const {
         case TYPE_UNKNOWN: return _align;
         case TYPE_CONS_CELL: return alignof(ConsCell);
         case TYPE_CALL_FRAME: return alignof(Scope);
+        case TYPE_STRING: return alignof(String);
+        case TYPE_USER_PROC: return alignof(UserProc);
+        case TYPE_BUILTIN_PROC: return alignof(BuiltinProc);
     }
     return 0;
 }

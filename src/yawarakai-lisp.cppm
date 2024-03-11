@@ -405,7 +405,7 @@ export SexpListIterable iterate(Sexp s, Environment& env) {
     return { SexpListIterator(s, env) };
 }
 
-export std::vector<Sexp> parse_sexp(std::string_view src, Environment& env);
+export Sexp parse_sexp(std::string_view src, Environment& env);
 export std::string dump_sexp(Sexp sexp, Environment& env);
 
 export Sexp call_user_proc(const UserProc& proc, Sexp params, Environment& env);

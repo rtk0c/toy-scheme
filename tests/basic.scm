@@ -18,8 +18,10 @@
 (> 4 12)
 (>= 3 (+ 1 2))
 (= 0 0)
-(= "fl" "fl")
-(= 'sym 'sym)
+(eq? "fl" "fl")
+(equal? "fl" "fl")
+(eq? 'sym 'sym)
+(equal? 'sym 'sym)
 
 ;; Test eval of builtins
 define

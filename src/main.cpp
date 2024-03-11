@@ -2,8 +2,8 @@ import std;
 import yawarakai;
 
 namespace fs = std::filesystem;
-namespace ywrk = yawarakai;
 using namespace std::literals;
+using namespace yawarakai;
 
 using Task = std::variant<fs::path, std::string>;
 namespace TaskType { constexpr int FILE = 0, LITERAL = 1; };
@@ -53,25 +53,24 @@ ProgramOptions parse_args(int argc, char** argv) {
     return res;
 }
 
-void run_buffer(std::string_view buffer, const ProgramOptions& opts, ywrk::Environment& env) {
-    std::vector<ywrk::Sexp> sexps;
+void run_buffer(std::string_view buffer, const ProgramOptions& opts, Environment& env) {
+    Sexp program;
     try {
-        sexps = ywrk::parse_sexp(buffer, env);
-    } catch (const ywrk::ParseException& e) {
+        program = parse_sexp(buffer, env);
+    } catch (const ParseException& e) {
         std::cerr << "Parsing exception: " << e.msg << '\n';
         return;
     }
 
-    for (auto& sexp : sexps) {
+    for (auto& sexp : iterate(program, env)) {
         try {
-            std::cout << "parsed: " << ywrk::dump_sexp(sexp, env) << std::endl;
             if (opts.parse_only) {
-                std::cout << ywrk::dump_sexp(sexp, env) << std::endl;
+                std::cout << dump_sexp(sexp, env) << std::endl;
             } else {
-                auto res = ywrk::eval(sexp, env);
-                std::cout << ywrk::dump_sexp(res, env) << std::endl;
+                auto res = eval(sexp, env);
+                std::cout << dump_sexp(res, env) << std::endl;
             }
-        } catch (const ywrk::EvalException& e) {
+        } catch (const EvalException& e) {
             std::cerr << "Eval exception: " << e.msg << std::endl;
         } catch (const std::runtime_error& e) {
             std::cerr << "Internal error: " << e.what() << std::endl;
@@ -82,7 +81,7 @@ void run_buffer(std::string_view buffer, const ProgramOptions& opts, ywrk::Envir
 int main(int argc, char** argv) {
     auto opts = parse_args(argc, argv);
 
-    ywrk::Environment env;
+    Environment env;
     for (auto& task : opts.tasks) {
         switch (task.index()) {
             case TaskType::FILE: {
