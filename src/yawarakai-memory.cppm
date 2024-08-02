@@ -93,23 +93,23 @@ export template <>
 struct HeapPtr<void> {
     void* ptr;
 
-    /*implicit*/ HeapPtr()
+    constexpr /*implicit*/ HeapPtr()
         : ptr{ nullptr } {}
 
     template <typename T>
-    explicit HeapPtr(T* ptr)
+    constexpr explicit HeapPtr(T* ptr)
         : ptr{ static_cast<void*>(ptr) } {}
 
     template <typename T>
-    /*implicit*/ HeapPtr(HeapPtr<T> ptr)
+    constexpr /*implicit*/ HeapPtr(HeapPtr<T> ptr)
         : ptr{ static_cast<void*>(ptr.get()) } {}
 
-    operator bool() const { return ptr != nullptr; }
+    constexpr operator bool() const { return ptr != nullptr; }
 
     // C++20: operator!= automatically generated
-    bool operator==(std::nullptr_t) const { return ptr == nullptr; }
+    constexpr bool operator==(std::nullptr_t) const { return ptr == nullptr; }
 
-    void* get() const { return ptr; }
+    constexpr void* get() const { return ptr; }
 
     template <typename T>
     T* get_as() const {

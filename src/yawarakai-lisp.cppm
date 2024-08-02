@@ -140,78 +140,84 @@ export constexpr uintptr_t SCVAL_NIL = 0x0000'0000'0000'0000 | SCVAL_FLAG_PTR;
 export struct Sexp {
     uintptr_t _value;
 
-    uint8_t get_flags() const { return _value & SCVAL_MASK_FLAG; }
+    [[nodiscard]] constexpr uint8_t get_flags() const {
+        return _value & SCVAL_MASK_FLAG;
+    }
 
-    bool is_numeric() const { return is_int() || is_float(); }
+    [[nodiscard]] constexpr bool is_numeric() const {
+        return is_int() || is_float();
+    }
 
     /******** Fixnum ********/
 
-    bool is_int() const { return get_flags() == SCVAL_FLAG_INT; }
+    [[nodiscard]] constexpr bool is_int() const {
+        return get_flags() == SCVAL_FLAG_INT;
+    }
 
-    int32_t as_int() const {
+    [[nodiscard]] constexpr int32_t as_int() const {
         assert(is_int());
         auto payload = static_cast<uint32_t>(_value >> 32);
         return std::bit_cast<int32_t>(payload);
     }
 
-    explicit Sexp(int32_t v) { set_int(v); }
+    constexpr explicit Sexp(int32_t v) { set_int(v); }
 
-    void set_int(int32_t v) {
+    constexpr void set_int(int32_t v) {
         auto payload = std::bit_cast<uint32_t>(v);
         _value = (static_cast<uint64_t>(payload) << 32) | SCVAL_FLAG_INT;
     }
 
     /******** Flonum ********/
 
-    bool is_float() const { return get_flags() == SCVAL_FLAG_FLOAT; }
+    constexpr bool is_float() const { return get_flags() == SCVAL_FLAG_FLOAT; }
 
-    float as_float() const {
+    constexpr float as_float() const {
         assert(is_float());
         auto payload = static_cast<uint32_t>(_value >> 32);
         return std::bit_cast<float>(payload);
     }
 
-    explicit Sexp(float v) { set_float(v); }
+    constexpr explicit Sexp(float v) { set_float(v); }
 
-    void set_float(float v) {
+    constexpr void set_float(float v) {
         auto payload = std::bit_cast<uint32_t>(v);
         _value = (static_cast<uint64_t>(payload) << 32) | SCVAL_FLAG_FLOAT;
     }
 
     /******** Boolean ********/
 
-    bool is_bool() const { return get_flags() == SCVAL_FLAG_BOOL; }
+    constexpr bool is_bool() const { return get_flags() == SCVAL_FLAG_BOOL; }
 
-    bool as_bool() const {
+    constexpr bool as_bool() const {
         assert(is_bool());
         return _value == SCVAL_TRUE;
     }
 
-    bool evalute_bool() const {
+    constexpr bool evalute_bool() const {
         return is_bool() ? _value == SCVAL_TRUE : true;
     }
 
     // // Using a template + concept to prohibit pointer and integral implicit convdrsion to bool
     // template <std::same_as<bool> T>
     // explicit Sexp(T v) { set_bool(v); }
-    explicit Sexp(bool v) { set_bool(v); }
+    constexpr explicit Sexp(bool v) { set_bool(v); }
 
-    void set_bool(bool v) {
+    constexpr void set_bool(bool v) {
         _value = v ? SCVAL_TRUE : SCVAL_FALSE;
     }
 
     /******** Symbol ********/
 
-    bool is_symbol() const { return get_flags() == SCVAL_FLAG_SYMBOL; }
+    constexpr bool is_symbol() const { return get_flags() == SCVAL_FLAG_SYMBOL; }
 
-    const Symbol& as_symbol() const {
+    constexpr const Symbol& as_symbol() const {
         assert(is_symbol());
         return *std::bit_cast<const Symbol*>(_value & ~0b111);
     }
 
-    explicit Sexp(const Symbol& sym) { set_symbol(sym); }
+    constexpr explicit Sexp(const Symbol& sym) { set_symbol(sym); }
 
-    void set_symbol(const Symbol& sym) {
+    constexpr void set_symbol(const Symbol& sym) {
         auto bits = std::bit_cast<uintptr_t>(&sym);
         assert((bits & SCVAL_MASK_FLAG) == 0);
         _value = bits | SCVAL_FLAG_SYMBOL;
@@ -219,39 +225,39 @@ export struct Sexp {
 
     /******** Heap pointer ********/
 
-    bool is_nil() const { return _value == SCVAL_NIL; }
+    constexpr bool is_nil() const { return _value == SCVAL_NIL; }
 
-    bool is_ptr() const { return get_flags() == SCVAL_FLAG_PTR; }
+    constexpr bool is_ptr() const { return get_flags() == SCVAL_FLAG_PTR; }
 
     template <typename T>
-    bool is_ptr() const {
+    constexpr bool is_ptr() const {
         return is_ptr() && as_ptr().get_type() == T::HEAP_OBJECT_TYPE;
     }
 
-    HeapPtr<void> as_ptr() const {
+    constexpr HeapPtr<void> as_ptr() const {
         assert(is_ptr());
         return HeapPtr(std::bit_cast<void*>(_value & ~0b111));
     }
 
     template <typename T>
-    HeapPtr<T> as_ptr() const {
+    constexpr HeapPtr<T> as_ptr() const {
         return as_ptr().as<T>();
     }
 
     // nil constructor
-    explicit Sexp()
+    constexpr explicit Sexp()
         : _value{ SCVAL_NIL } {}
 
     // DO NOT REMOVE THIS CONSTRUCTOR
     // otherwise, all usages of Sexp(T*) is going to match the Sexp(bool), which is totally wrong!
     template <typename T>
-    explicit Sexp(T* v) { set_pointer(HeapPtr<void>(v)); }
+    constexpr explicit Sexp(T* v) { set_pointer(HeapPtr<void>(v)); }
 
     // Handles Sexp(HeapPtr<void>)
     // Handles Sexp(HeapPtr<T>) by the implicit conversion operator
-    explicit Sexp(HeapPtr<void> v) { set_pointer(v); }
+    constexpr explicit Sexp(HeapPtr<void> v) { set_pointer(v); }
 
-    void set_pointer(HeapPtr<void> v) {
+    constexpr void set_pointer(HeapPtr<void> v) {
         auto bits = std::bit_cast<uintptr_t>(v.get());
         assert((bits & SCVAL_MASK_FLAG) == 0);
         _value = bits | SCVAL_FLAG_PTR;
