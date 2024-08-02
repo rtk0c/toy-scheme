@@ -154,25 +154,35 @@ public:
     Sexp parse();
 
 private:
-    Sexp* push_sexp(Sexp s) {
+    Sexp* push_sexp(Sexp val) {
+        // Pointer to the `val` moved to the heap
+        Sexp* p_val = nullptr;
+
         if (next_sexp_wrapper != nullptr) {
-            // TODO quoting is broken
-            Sexp wrapped_s = make_list_v(*env, Sexp(*next_sexp_wrapper), s);
-            s = wrapped_s;
-            next_sexp_wrapper = nullptr;
+            // Rolling the logic of make_list_v() manually here to keep a pointer to `val`
+            // i.e. let s = cons1[next_sexp_wrapper cons2[val nil]]
+            auto [cons1, _] = env->heap.allocate<ConsCell>();
+            // WORKAROUND(msvc): no support for P2169 "Placeholder variables with no name" yet
+            auto [cons2, __] = env->heap.allocate<ConsCell>();
+            cons1->car = Sexp(*next_sexp_wrapper);
+            cons1->cdr = Sexp(cons2);
+            cons2->car = val;
+            cons2->cdr = Sexp();
+
+            p_val = &cons2->car;
+            val = Sexp(cons1);
         }
 
-        // Allocate the cell holding the value
         auto [the_cons, _] = env->heap.allocate<ConsCell>();
-        the_cons->car = s;
-
-        Sexp* result = &the_cons->car; // pointer to the pushed value
-
-        // Advance `curr`
+        the_cons->car = val;
         *curr = Sexp(the_cons);
+
+        if (p_val == nullptr)
+            p_val = &the_cons->car;
         curr = &the_cons->cdr;
 
-        return result;
+        next_sexp_wrapper = nullptr;
+        return p_val;
     }
 
     void enter_nesting() {
