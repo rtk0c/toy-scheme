@@ -1,13 +1,13 @@
 module;
-#include "yawarakai/util.hpp"
+#include "toyscheme/util.hpp"
 #include <cassert>
 
-export module yawarakai:lisp;
+export module toyscheme:lisp;
 import :memory;
 import :util;
 import std;
 
-namespace yawarakai {
+namespace toyscheme {
 export struct ParseException {
     std::string msg;
 };
@@ -427,4 +427,4 @@ export Sexp eval_maybe_many(Sexp forms, Environment& env);
 /// Implements (progn): evalute each element in `forms`, and return the result of the last one.
 export Sexp eval_many(ConsCell* forms, Environment& env);
 
-} // namespace yawarakai
+} // namespace toyscheme

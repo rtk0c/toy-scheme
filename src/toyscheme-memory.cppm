@@ -1,12 +1,12 @@
 module;
 #include <cassert>
 
-export module yawarakai:memory;
+export module toyscheme:memory;
 
 import std;
 import std.compat;
 
-namespace yawarakai {
+namespace toyscheme {
 
 /******** Forward declarations ********/
 struct ConsCell;
@@ -217,4 +217,4 @@ private:
     void new_heap_segment();
 };
 
-} // namespace yawarakai
+} // namespace toyscheme

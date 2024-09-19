@@ -1,12 +1,12 @@
 module;
 #include <cassert>
 
-module yawarakai;
+module toyscheme;
 import std;
 
 using namespace std::literals;
 
-namespace yawarakai {
+namespace toyscheme {
 
 Environment::Environment() {
     auto [s, _] = heap.allocate<Scope>();
@@ -142,7 +142,7 @@ private:
     ///     (define (a b)
     ///       (my-func a |b))
     /// `curr` points to the the cdr of th e ConsCell `(a . '())`.
-    /// To push some `Sexp s` into the current list, just set curr to a new ConsCell `(s . '())`, and then set `curr` to its cdr (same logic as `yawarakai::cons_inplace()`).
+    /// To push some `Sexp s` into the current list, just set curr to a new ConsCell `(s . '())`, and then set `curr` to its cdr (same logic as `toyscheme::cons_inplace()`).
     std::vector<Sexp*> path;
     Sexp* curr;
     /// If not null, the next sexp `x` produced by the parser loop shall be rewritten as `(wrapper x)`
@@ -480,4 +480,4 @@ std::string dump_sexp(Sexp sexp, Environment& env) {
     return result;
 }
 
-} // namespace yawarakai
+} // namespace toyscheme

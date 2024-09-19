@@ -1,12 +1,12 @@
 module;
 #include "util.hpp"
 
-module yawarakai;
+module toyscheme;
 import std;
 
 using namespace std::literals;
 
-namespace yawarakai {
+namespace toyscheme {
 
 namespace {
 Sexp wrap_number(double v) {
@@ -485,4 +485,4 @@ void setup_scope_for_builtins(Environment& env) {
 #undef PROC
 }
 
-} // namespace yawarakai
+} // namespace toyscheme

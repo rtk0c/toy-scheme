@@ -1,9 +1,9 @@
 module;
 #include <cassert>
 
-module yawarakai;
+module toyscheme;
 
-namespace yawarakai {
+namespace toyscheme {
 
 bool ObjectHeader::is_flag_set(int flag_bit) const {
     assert(flag_bit >= 0 && flag_bit < 8);

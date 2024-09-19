@@ -1,10 +1,10 @@
 module;
 #include <cassert>
 
-export module yawarakai:util;
+export module toyscheme:util;
 import std;
 
-export namespace yawarakai {
+export namespace toyscheme {
 
 struct StringHash {
     using is_transparent = void;
@@ -77,4 +77,4 @@ uintptr_t shift_down_and_align(uintptr_t start, size_t size, size_t alignment) {
     return res_unaligned & ~(alignment - 1);
 }
 
-} // namespace yawarakai
+} // namespace toyscheme

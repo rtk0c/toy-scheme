@@ -1,9 +1,9 @@
 import std;
-import yawarakai;
+import toyscheme;
 
 namespace fs = std::filesystem;
 using namespace std::literals;
-using namespace yawarakai;
+using namespace toyscheme;
 
 using Task = std::variant<fs::path, std::string>;
 namespace TaskType { constexpr int FILE = 0, LITERAL = 1; };
