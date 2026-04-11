@@ -73,6 +73,9 @@ public:
     // This *technically* also accepts things like `const char arr[5];` - just don't do it
     template <std::size_t N>
     const Symbol& intern(const char (&str)[N]) {
+        const char* str_ptr = str;
+        return intern(str_ptr, N);
+#if 0
         // Length of the char array from a literal contains the null terminator
         std::size_t actual_len = N - 1;
         auto& sym = _pool[std::string(str, actual_len)];
@@ -82,6 +85,7 @@ public:
             const char* str_ptr = str;
 
             // Sanity check: the pointer is not using the lowest bit
+            //std::printf("%p\n", str_ptr);
             assert((std::bit_cast<std::uintptr_t>(str_ptr) & 0x1) == 0);
 
             // Set lowest bit, indicating this is a literal
@@ -89,13 +93,14 @@ public:
             sym._size = actual_len;
         }
         return sym;
+#endif
     }
 
     // Constructor for runtime strings (make a copy)
     const Symbol& intern(const char* str, std::size_t len) {
         auto& sym = _pool[std::string(str, len)];
         if (sym.data() == nullptr) {
-            char* data = new char[len + 1]{};
+            char* data = new(std::align_val_t{8}) char[len + 1]{};
             sym._size = len;
             sym._data = std::bit_cast<std::uintptr_t>(data);
             // Sanity check: the pointer is not using the lowest bit
