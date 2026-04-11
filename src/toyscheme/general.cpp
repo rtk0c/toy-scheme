@@ -328,9 +328,6 @@ Sexp SexpParser::parse() {
             cursor += 1;
             if (cursor >= src.length()) throw ParseException("unexpected EOF while parsing #-symbols"s);
 
-            char next_c = src[cursor];
-            cursor += 1;
-
             auto token = take_token();
             if (token == "t"sv) {
                 push_sexp(Sexp(true));
