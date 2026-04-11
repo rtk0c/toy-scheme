@@ -1,4 +1,6 @@
 module;
+#include <cstddef>
+#include <cstdint>
 #include <cassert>
 
 export module toyscheme:memory;
@@ -9,8 +11,8 @@ import std.compat;
 namespace toyscheme {
 
 /******** Forward declarations ********/
-struct ConsCell;
-struct Scope;
+export struct ConsCell;
+export struct Scope;
 
 export enum class ObjectType : uint16_t {
     TYPE_UNKNOWN,
@@ -89,7 +91,7 @@ struct HeapPtr {
     }
 };
 
-export template <>
+template <>
 struct HeapPtr<void> {
     void* ptr;
 

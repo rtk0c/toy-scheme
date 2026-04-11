@@ -1,4 +1,6 @@
 module;
+#include <cstddef>
+#include <cstdint>
 #include "toyscheme/util.hpp"
 #include <cassert>
 

@@ -1,4 +1,6 @@
 module;
+#include <cstddef>
+#include <cstdint>
 #include <cassert>
 
 export module toyscheme:util;
