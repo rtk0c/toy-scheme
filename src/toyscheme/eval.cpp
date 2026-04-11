@@ -1,5 +1,4 @@
 module;
-#include <cstdint>
 #include "util.hpp"
 
 module toyscheme;
@@ -12,7 +11,7 @@ namespace toyscheme {
 namespace {
 Sexp wrap_number(double v) {
     // TODO makes this less wack
-    if (auto n = static_cast<int32_t>(v); n == v)
+    if (auto n = static_cast<std::int32_t>(v); n == v)
         return Sexp(n);
     else
         return Sexp(static_cast<float>(v));

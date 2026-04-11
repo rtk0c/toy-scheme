@@ -1,6 +1,4 @@
 module;
-#include <cstddef>
-#include <cstdint>
 #include <cassert>
 
 export module toyscheme:util;
@@ -10,9 +8,9 @@ export namespace toyscheme {
 
 struct StringHash {
     using is_transparent = void;
-    size_t operator()(const std::string& s) const { return std::hash<std::string>{}(s); }
-    size_t operator()(std::string_view s) const { return std::hash<std::string_view>{}(s); }
-    size_t operator()(const char* s) const { return std::hash<std::string_view>{}(s); }
+    std::size_t operator()(const std::string& s) const { return std::hash<std::string>{}(s); }
+    std::size_t operator()(std::string_view s) const { return std::hash<std::string_view>{}(s); }
+    std::size_t operator()(const char* s) const { return std::hash<std::string_view>{}(s); }
 };
 
 // https://stackoverflow.com/a/52393977
@@ -72,7 +70,7 @@ bool is_power_of_two(T v) {
     return v != 0 && (v & (v - 1)) == 0;
 }
 
-uintptr_t shift_down_and_align(uintptr_t start, size_t size, size_t alignment) {
+std::uintptr_t shift_down_and_align(std::uintptr_t start, std::size_t size, std::size_t alignment) {
     assert(is_power_of_two(alignment));
 
     auto res_unaligned = start - size;

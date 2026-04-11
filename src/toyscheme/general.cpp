@@ -1,6 +1,4 @@
 module;
-#include <cstddef>
-#include <cstdint>
 #include <cassert>
 
 module toyscheme;
@@ -149,7 +147,7 @@ private:
     Sexp* curr;
     /// If not null, the next sexp `x` produced by the parser loop shall be rewritten as `(wrapper x)`
     const Symbol* next_sexp_wrapper = nullptr;
-    size_t cursor;
+    std::size_t cursor;
 
 public:
     // Defined out of line to reduce indentation
@@ -210,10 +208,10 @@ private:
     }
 
     std::string_view take_token() {
-        size_t begin = cursor;
+        std::size_t begin = cursor;
         while (cursor < src.length() && !is_token_separator(src[cursor]))
             cursor += 1;
-        size_t end = cursor;
+        std::size_t end = cursor;
 
         const char* d = src.data();
         return std::string_view(d + begin, d + end);
@@ -279,8 +277,8 @@ Sexp SexpParser::parse() {
         if (src[cursor] == '"') {
             cursor += 1;
 
-            size_t str_size = 0;
-            size_t str_begin = cursor;
+            std::size_t str_size = 0;
+            std::size_t str_begin = cursor;
             while (true) {
                 // Break conditions
                 if (cursor >= src.length())
@@ -304,7 +302,7 @@ Sexp SexpParser::parse() {
             auto& str = h_str->v;
             str.reserve(str_size);
 
-            size_t i = str_begin;
+            std::size_t i = str_begin;
             while (i < str_begin + str_size) {
                 if (src[i] != '\\') {
                     str.push_back(src[i]);
@@ -353,7 +351,7 @@ Sexp SexpParser::parse() {
         auto [rest, ec] = std::from_chars(&src[cursor], src.data() + src.size(), v);
         if (ec == std::errc()) {
             // TODO proper Scheme numeric literal parsing
-            if (auto n = static_cast<int32_t>(v); n == v)
+            if (auto n = static_cast<std::int32_t>(v); n == v)
                 push_sexp(Sexp(n));
             else
                 push_sexp(Sexp(v));

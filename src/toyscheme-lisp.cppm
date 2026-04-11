@@ -1,6 +1,4 @@
 module;
-#include <cstddef>
-#include <cstdint>
 #include "toyscheme/util.hpp"
 #include <cassert>
 
@@ -23,8 +21,8 @@ export class Symbol {
 private:
     friend class SymbolPool;
 
-    uintptr_t _data = 0;
-    size_t _size = 0;
+    std::uintptr_t _data = 0;
+    std::size_t _size = 0;
 
 public:
     /// Constructs an empty symbol
@@ -58,7 +56,7 @@ public:
     }
 
     const char* data() const { return std::bit_cast<const char*>(_data & ~0x1); }
-    size_t size() const { return _size; }
+    std::size_t size() const { return _size; }
 
     operator std::string_view() const { return { data(), size() }; }
 
@@ -73,10 +71,10 @@ private:
 public:
     // Constructor for string literals
     // This *technically* also accepts things like `const char arr[5];` - just don't do it
-    template <size_t N>
+    template <std::size_t N>
     const Symbol& intern(const char (&str)[N]) {
         // Length of the char array from a literal contains the null terminator
-        size_t actual_len = N - 1;
+        std::size_t actual_len = N - 1;
         auto& sym = _pool[std::string(str, actual_len)];
         // If this Symbol is default constructed, i.e. this is a new entry in the symbol pool
         if (sym.data() == nullptr) {
@@ -84,24 +82,24 @@ public:
             const char* str_ptr = str;
 
             // Sanity check: the pointer is not using the lowest bit
-            assert((std::bit_cast<uintptr_t>(str_ptr) & 0x1) == 0);
+            assert((std::bit_cast<std::uintptr_t>(str_ptr) & 0x1) == 0);
 
             // Set lowest bit, indicating this is a literal
-            sym._data = std::bit_cast<uintptr_t>(str_ptr) | 0x1;
+            sym._data = std::bit_cast<std::uintptr_t>(str_ptr) | 0x1;
             sym._size = actual_len;
         }
         return sym;
     }
 
     // Constructor for runtime strings (make a copy)
-    const Symbol& intern(const char* str, size_t len) {
+    const Symbol& intern(const char* str, std::size_t len) {
         auto& sym = _pool[std::string(str, len)];
         if (sym.data() == nullptr) {
             char* data = new char[len + 1]{};
             sym._size = len;
-            sym._data = std::bit_cast<uintptr_t>(data);
+            sym._data = std::bit_cast<std::uintptr_t>(data);
             // Sanity check: the pointer is not using the lowest bit
-            assert((std::bit_cast<uintptr_t>(data) & 0x1) == 0);
+            assert((std::bit_cast<std::uintptr_t>(data) & 0x1) == 0);
             // Copy string content
             std::memcpy(data, str, len);
             // Null terminate
@@ -117,7 +115,7 @@ public:
 };
 
 // All heap objects are 8-byte aligned
-export constexpr uintptr_t SCVAL_MASK_FLAG = 0x0000'0000'0000'0007;
+export constexpr std::uintptr_t SCVAL_MASK_FLAG = 0x0000'0000'0000'0007;
 
 // 32 bit signed integer in the MSB
 export constexpr unsigned int SCVAL_FLAG_INT = 0b000;
@@ -127,8 +125,8 @@ export constexpr unsigned int SCVAL_FLAG_FLOAT = 0b010;
 
 // Bi-state value
 export constexpr unsigned int SCVAL_FLAG_BOOL = 0b100;
-export constexpr uintptr_t SCVAL_FALSE = 0x0000'0000'0000'0000 | SCVAL_FLAG_BOOL;
-export constexpr uintptr_t SCVAL_TRUE = 0x0000'0000'0000'0010 | SCVAL_FLAG_BOOL;
+export constexpr std::uintptr_t SCVAL_FALSE = 0x0000'0000'0000'0000 | SCVAL_FLAG_BOOL;
+export constexpr std::uintptr_t SCVAL_TRUE = 0x0000'0000'0000'0010 | SCVAL_FLAG_BOOL;
 
 // 32-bit unsigned integer in the MSB, storing the symbol ID
 export constexpr unsigned int SCVAL_FLAG_SYMBOL = 0b110;
@@ -137,12 +135,12 @@ export constexpr unsigned int SCVAL_FLAG_SYMBOL = 0b110;
 export constexpr unsigned int SCVAL_FLAG_PTR = 0b001;
 // Empty list, special value for SCVAL_MASK_PTR
 // All address bits are 0 and flag == SCVAL_MASK_PTR
-export constexpr uintptr_t SCVAL_NIL = 0x0000'0000'0000'0000 | SCVAL_FLAG_PTR;
+export constexpr std::uintptr_t SCVAL_NIL = 0x0000'0000'0000'0000 | SCVAL_FLAG_PTR;
 
 export struct Sexp {
-    uintptr_t _value;
+    std::uintptr_t _value;
 
-    [[nodiscard]] constexpr uint8_t get_flags() const {
+    [[nodiscard]] constexpr std::uint8_t get_flags() const {
         return _value & SCVAL_MASK_FLAG;
     }
 
@@ -156,17 +154,17 @@ export struct Sexp {
         return get_flags() == SCVAL_FLAG_INT;
     }
 
-    [[nodiscard]] constexpr int32_t as_int() const {
+    [[nodiscard]] constexpr std::int32_t as_int() const {
         assert(is_int());
-        auto payload = static_cast<uint32_t>(_value >> 32);
-        return std::bit_cast<int32_t>(payload);
+        auto payload = static_cast<std::uint32_t>(_value >> 32);
+        return std::bit_cast<std::int32_t>(payload);
     }
 
-    constexpr explicit Sexp(int32_t v) { set_int(v); }
+    constexpr explicit Sexp(std::int32_t v) { set_int(v); }
 
-    constexpr void set_int(int32_t v) {
-        auto payload = std::bit_cast<uint32_t>(v);
-        _value = (static_cast<uint64_t>(payload) << 32) | SCVAL_FLAG_INT;
+    constexpr void set_int(std::int32_t v) {
+        auto payload = std::bit_cast<std::uint32_t>(v);
+        _value = (static_cast<std::uint64_t>(payload) << 32) | SCVAL_FLAG_INT;
     }
 
     /******** Flonum ********/
@@ -175,15 +173,15 @@ export struct Sexp {
 
     constexpr float as_float() const {
         assert(is_float());
-        auto payload = static_cast<uint32_t>(_value >> 32);
+        auto payload = static_cast<std::uint32_t>(_value >> 32);
         return std::bit_cast<float>(payload);
     }
 
     constexpr explicit Sexp(float v) { set_float(v); }
 
     constexpr void set_float(float v) {
-        auto payload = std::bit_cast<uint32_t>(v);
-        _value = (static_cast<uint64_t>(payload) << 32) | SCVAL_FLAG_FLOAT;
+        auto payload = std::bit_cast<std::uint32_t>(v);
+        _value = (static_cast<std::uint64_t>(payload) << 32) | SCVAL_FLAG_FLOAT;
     }
 
     /******** Boolean ********/

@@ -1,6 +1,4 @@
 module;
-#include <cstddef>
-#include <cstdint>
 #include <cassert>
 
 export module toyscheme:memory;
@@ -14,7 +12,7 @@ namespace toyscheme {
 export struct ConsCell;
 export struct Scope;
 
-export enum class ObjectType : uint16_t {
+export enum class ObjectType : std::uint16_t {
     TYPE_UNKNOWN,
     TYPE_CONS_CELL,
     TYPE_STRING,
@@ -39,24 +37,24 @@ export struct ObjectHeader {
     bool is_flag_set(int flag_bit) const;
     void set_flag(int flag_bit, bool value);
 
-    size_t _read_size() const;
-    size_t get_size() const;
-    void set_size(size_t size);
+    std::size_t _read_size() const;
+    std::size_t get_size() const;
+    void set_size(std::size_t size);
 
-    size_t get_alignment() const;
-    void set_alignment(size_t alignment);
+    std::size_t get_alignment() const;
+    void set_alignment(std::size_t alignment);
 
     ObjectType get_type() const;
     void set_type(ObjectType type);
 };
 
-static_assert(sizeof(ObjectHeader) == sizeof(uint64_t));
+static_assert(sizeof(ObjectHeader) == sizeof(std::uint64_t));
 static_assert(alignof(ObjectHeader) == 1);
 
 struct HeapSegment {
     std::byte* arena;
     std::byte* last_object;
-    size_t arena_size;
+    std::size_t arena_size;
 };
 
 export template <typename T>
@@ -156,7 +154,7 @@ public:
     Heap();
     ~Heap();
 
-    std::pair<std::byte*, ObjectHeader*> allocate(size_t size, size_t alignment);
+    std::pair<std::byte*, ObjectHeader*> allocate(std::size_t size, std::size_t alignment);
 
     template <typename T, typename... TArgs>
     std::pair<T*, ObjectHeader*> allocate(TArgs&&... args) {
@@ -178,13 +176,13 @@ public:
 
     void walk_heap_objects(auto&& visitor) const {
         for (auto& hg : heap_segments) {
-            auto curr = std::bit_cast<uintptr_t>(hg.last_object);
-            auto end = std::bit_cast<uintptr_t>(hg.arena) + hg.arena_size;
+            auto curr = std::bit_cast<std::uintptr_t>(hg.last_object);
+            auto end = std::bit_cast<std::uintptr_t>(hg.arena) + hg.arena_size;
             while (curr < end) {
                 auto header = std::bit_cast<ObjectHeader*>(curr);
                 curr += sizeof(ObjectHeader);
-                size_t obj_size = header->get_size();
-                size_t obj_align = header->get_alignment();
+                std::size_t obj_size = header->get_size();
+                std::size_t obj_align = header->get_alignment();
 
                 auto obj = std::bit_cast<std::byte*>(curr);
                 curr += obj_size;
